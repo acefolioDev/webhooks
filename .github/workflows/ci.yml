@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Build and pack @nestjs/outbox
+        run: |
+          git clone --depth 1 https://github.com/nestjs/outbox.git ../outbox
+          cd ../outbox && npm install && npm run build && npm pack
+      - run: npm install
+      - run: npm run build
+      - run: npm run lint
+
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Node.js line vitest 5 runs on and the current one, against the
+        # oldest supported NestJS release (12.0) and the latest 12.x.
+        node-version: [22, 24]
+        nestjs-version: ['12.0', '12']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - name: Build and pack @nestjs/outbox
+        run: |
+          git clone --depth 1 https://github.com/nestjs/outbox.git ../outbox
+          cd ../outbox && npm install && npm run build && npm pack
+      - name: Install dependencies
+        run: npm install
+      - name: Install NestJS ${{ matrix.nestjs-version }}
+        run: npm install --no-save @nestjs/common@${{ matrix.nestjs-version }} @nestjs/core@${{ matrix.nestjs-version }} @nestjs/testing@${{ matrix.nestjs-version }} @nestjs/platform-express@${{ matrix.nestjs-version }} @nestjs/platform-fastify@${{ matrix.nestjs-version }}
+      - name: Typecheck
+        run: npx tsc -p tsconfig.json --noEmit
+      - name: e2e tests
+        run: npm run test:e2e
