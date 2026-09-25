@@ -13,6 +13,7 @@ export default defineConfig({
     typescript: { removeClassFieldsWithoutInitializer: true },
   },
   test: {
+    globalSetup: ['tests/support/global-setup.ts'],
     include: ['tests/**/*.spec.ts'],
     globals: true,
     setupFiles: ['reflect-metadata'],
