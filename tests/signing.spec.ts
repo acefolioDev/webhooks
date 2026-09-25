@@ -132,8 +132,8 @@ describe('the built-in schemes', () => {
       valid: true,
       id: 'msg_1',
     });
-    const st = signWebhook({ scheme: 'stripe', secret: 'shh', payload: body, header: 'ShipCo-Signature' });
-    expect(new StripeScheme('shipco-signature').verify({ headers: st.headers, rawBody: Buffer.from(st.body) }, [Buffer.from('shh')])).toMatchObject({
+    const st = signWebhook({ scheme: 'stripe', secret: 'shh', payload: body, header: 'Carrier-Signature' });
+    expect(new StripeScheme('carrier-signature').verify({ headers: st.headers, rawBody: Buffer.from(st.body) }, [Buffer.from('shh')])).toMatchObject({
       valid: true,
     });
     const gh = signWebhook({ scheme: 'github', secret: 'shh', payload: body, id: 'd-1' });
@@ -156,63 +156,63 @@ describe('WebhookVerifier', () => {
   }
 
   it('checks the timestamp against the tolerance, in both directions', async () => {
-    const { verifier: v, events, close } = await verifier({ payfast: { scheme: 'standard', secret: SECRET, tolerance: '5m' } });
+    const { verifier: v, events, close } = await verifier({ payments: { scheme: 'standard', secret: SECRET, tolerance: '5m' } });
     const at = (offsetMs: number) => signWebhook({ scheme: 'standard', secret: SECRET, payload: { a: 1 }, timestamp: new Date(Date.now() + offsetMs) });
     for (const offset of [-4 * 60_000, 4 * 60_000]) {
       const s = at(offset);
-      expect(v.verify('payfast', { headers: s.headers, rawBody: s.body }).payload).toEqual({ a: 1 });
+      expect(v.verify('payments', { headers: s.headers, rawBody: s.body }).payload).toEqual({ a: 1 });
     }
     for (const offset of [-6 * 60_000, 6 * 60_000]) {
       const s = at(offset);
-      expect(() => v.verify('payfast', { headers: s.headers, rawBody: s.body })).toThrow(
+      expect(() => v.verify('payments', { headers: s.headers, rawBody: s.body })).toThrow(
         expect.objectContaining({ reason: 'timestamp-out-of-tolerance', status: 401 }),
       );
     }
 
     expect(events).toEqual([
-      { type: 'verification-failed', receiver: 'payfast', reason: 'timestamp-out-of-tolerance' },
-      { type: 'verification-failed', receiver: 'payfast', reason: 'timestamp-out-of-tolerance' },
+      { type: 'verification-failed', receiver: 'payments', reason: 'timestamp-out-of-tolerance' },
+      { type: 'verification-failed', receiver: 'payments', reason: 'timestamp-out-of-tolerance' },
     ]);
     await close();
   });
 
   it('tries every configured secret (the sender rotating), and reads headers in any case', async () => {
     const next = `whsec_${Buffer.alloc(32, 7).toString('base64')}`;
-    const { verifier: v, close } = await verifier({ payfast: { scheme: 'standard', secret: [next, SECRET] } });
+    const { verifier: v, close } = await verifier({ payments: { scheme: 'standard', secret: [next, SECRET] } });
     const s = signWebhook({ scheme: 'standard', secret: SECRET, payload: { ok: true }, id: 'msg_x' });
     const upper = Object.fromEntries(Object.entries(s.headers).map(([k, value]) => [k.toUpperCase(), value]));
-    const webhook = v.verify('payfast', { headers: upper, rawBody: Buffer.from(s.body) });
-    expect(webhook).toMatchObject({ receiver: 'payfast', id: 'msg_x', payload: { ok: true } });
+    const webhook = v.verify('payments', { headers: upper, rawBody: Buffer.from(s.body) });
+    expect(webhook).toMatchObject({ receiver: 'payments', id: 'msg_x', payload: { ok: true } });
     expect(webhook.timestamp).toBeInstanceOf(Date);
-    expect(v.verify('payfast', { headers: new Headers(s.headers), rawBody: s.body }).id).toBe('msg_x');
+    expect(v.verify('payments', { headers: new Headers(s.headers), rawBody: s.body }).id).toBe('msg_x');
     await close();
   });
 
   it('refuses a validly signed body that is not JSON with a 400, and a receiver that does not exist', async () => {
-    const { verifier: v, close } = await verifier({ payfast: { scheme: 'standard', secret: SECRET } });
+    const { verifier: v, close } = await verifier({ payments: { scheme: 'standard', secret: SECRET } });
     const s = signWebhook({ scheme: 'standard', secret: SECRET, payload: 'not json' });
     let error: unknown;
     try {
-      v.verify('payfast', { headers: s.headers, rawBody: s.body });
+      v.verify('payments', { headers: s.headers, rawBody: s.body });
     } catch (e) {
       error = e;
     }
 
     expect(error).toBeInstanceOf(WebhookVerificationError);
     expect(error).toMatchObject({ status: 400, reason: 'invalid-payload' });
-    expect(() => v.verify('stripe', { headers: s.headers, rawBody: s.body })).toThrow(/Unknown webhook receiver "stripe". Configured: payfast/);
+    expect(() => v.verify('stripe', { headers: s.headers, rawBody: s.body })).toThrow(/Unknown webhook receiver "stripe". Configured: payments/);
     await close();
   });
 
   it("uses Stripe's event id from the signed payload, and a custom id function", async () => {
     const { verifier: v, close } = await verifier({
-      shipco: { scheme: 'stripe', header: 'ShipCo-Signature', secret: 'shipco_secret' },
+      carrier: { scheme: 'stripe', header: 'Carrier-Signature', secret: 'carrier_secret' },
       gh: { scheme: 'github', secret: 'gh', id: (payload: { delivery: string }) => payload.delivery },
     });
-    const s = signWebhook({ scheme: 'stripe', header: 'ShipCo-Signature', secret: 'shipco_secret', payload: { id: 'evt_9', type: 'x' } });
-    expect(v.verify('shipco', { headers: s.headers, rawBody: s.body }).id).toBe('evt_9');
-    const noId = signWebhook({ scheme: 'stripe', header: 'ShipCo-Signature', secret: 'shipco_secret', payload: { type: 'x' } });
-    expect(() => v.verify('shipco', { headers: noId.headers, rawBody: noId.body })).toThrow(expect.objectContaining({ reason: 'missing-header' }));
+    const s = signWebhook({ scheme: 'stripe', header: 'Carrier-Signature', secret: 'carrier_secret', payload: { id: 'evt_9', type: 'x' } });
+    expect(v.verify('carrier', { headers: s.headers, rawBody: s.body }).id).toBe('evt_9');
+    const noId = signWebhook({ scheme: 'stripe', header: 'Carrier-Signature', secret: 'carrier_secret', payload: { type: 'x' } });
+    expect(() => v.verify('carrier', { headers: noId.headers, rawBody: noId.body })).toThrow(expect.objectContaining({ reason: 'missing-header' }));
     const g = signWebhook({ scheme: 'github', secret: 'gh', payload: { delivery: 'from-payload' }, id: 'from-header' });
     expect(v.verify('gh', { headers: g.headers, rawBody: g.body }).id).toBe('from-payload');
     expect(v.verify('gh', { headers: g.headers, rawBody: g.body }).timestamp).toBeNull();

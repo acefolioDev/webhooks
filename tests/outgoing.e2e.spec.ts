@@ -36,7 +36,7 @@ describe('dispatching after commit', () => {
     await t.endpoints.create({ url: 'https://internal.example/hooks', eventTypes: ['*'] });
 
     const message = await t.transaction((tx) =>
-      t.webhooks.dispatch(tx, { type: 'order.shipped', tenant: 'shop-1', data: { orderId: 'o-1', carrier: 'ShipCo' } }),
+      t.webhooks.dispatch(tx, { type: 'order.shipped', tenant: 'shop-1', data: { orderId: 'o-1', trackingNumber: 'TRK-1' } }),
     );
     expect(message.id).toMatch(/^msg_[0-9a-f]{32}$/);
     expect(t.transport.sent).toEqual([]); // nothing before the outbox relays the commit
@@ -50,7 +50,7 @@ describe('dispatching after commit', () => {
     expect(JSON.parse(sent.body)).toEqual({
       type: 'order.shipped',
       timestamp: new Date(message.createdAt).toISOString(),
-      data: { orderId: 'o-1', carrier: 'ShipCo' },
+      data: { orderId: 'o-1', trackingNumber: 'TRK-1' },
     });
     expect(sent.body).toBe(message.body);
     expect(sent.headers).toMatchObject({

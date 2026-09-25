@@ -24,12 +24,12 @@ export interface SignedWebhook {
 }
 
 /**
- * Signs a test payload the way PayFast (Standard Webhooks), Stripe or GitHub would, for
+ * Signs a test payload the way a payment provider (Standard Webhooks), Stripe or GitHub would, for
  * requests to your `@VerifyWebhook()` routes:
  *
  * ```ts
  * const { body, headers } = signWebhook({ scheme: 'standard', secret, payload: { type: 'payment.succeeded', data } });
- * await request(app.getHttpServer()).post('/webhooks/payfast').set(headers).send(body).expect(200);
+ * await request(app.getHttpServer()).post('/webhooks/payments').set(headers).send(body).expect(200);
  * ```
  */
 export function signWebhook({ scheme, secret, payload, id, timestamp = new Date(), header }: SignWebhookOptions): SignedWebhook {

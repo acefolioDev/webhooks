@@ -12,8 +12,8 @@ import { WebhookInboxInterceptor } from '../interceptors/webhook-inbox.intercept
  * controller or a method; the method's receiver wins.
  *
  * ```ts
- * @Post('payfast') @HttpCode(200) @VerifyWebhook('payfast')
- * paid(@WebhookPayload() event: PayFastEvent) { ... }
+ * @Post('payments') @HttpCode(200) @VerifyWebhook('payments')
+ * paid(@WebhookPayload() event: PaymentEvent) { ... }
  * ```
  */
 export function VerifyWebhook(receiver: string): ClassDecorator & MethodDecorator {

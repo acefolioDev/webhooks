@@ -23,8 +23,8 @@ import {
 } from '../lib/index.js';
 import { CapturingLogger, sleep } from './helpers.js';
 
-const PAYFAST_SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';
-const SHIPCO_SECRET = 'shipco_live_5b0e1c';
+const PAYMENTS_SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw';
+const CARRIER_SECRET = 'carrier_live_5b0e1c';
 const GITHUB_SECRET = "It's a Secret to Everybody";
 const SHOPIFY_SECRET = 'shpss_0123456789';
 
@@ -60,10 +60,10 @@ class Ledger {
 class WebhooksController {
   constructor(private readonly ledger: Ledger) {}
 
-  @Post('payfast')
+  @Post('payments')
   @HttpCode(200)
-  @VerifyWebhook('payfast')
-  async payfast(@WebhookPayload() event: PaymentEvent, @IncomingWebhook() webhook: IncomingWebhook<PaymentEvent>) {
+  @VerifyWebhook('payments')
+  async payments(@WebhookPayload() event: PaymentEvent, @IncomingWebhook() webhook: IncomingWebhook<PaymentEvent>) {
     this.ledger.calls.push({ receiver: webhook.receiver, id: webhook.id, payload: event });
     if (event.data.slow) {
       await sleep(100);
@@ -74,10 +74,10 @@ class WebhooksController {
     return { received: webhook.id };
   }
 
-  @Post('shipco')
+  @Post('carrier')
   @HttpCode(200)
-  @VerifyWebhook('shipco')
-  shipco(@IncomingWebhook() webhook: IncomingWebhook) {
+  @VerifyWebhook('carrier')
+  carrier(@IncomingWebhook() webhook: IncomingWebhook) {
     this.ledger.calls.push({ receiver: webhook.receiver, id: webhook.id, payload: webhook.payload });
   }
 
@@ -103,10 +103,10 @@ class WebhooksController {
   }
 
   /** Exactly once: the inbox record commits with the ledger write. */
-  @Post('payfast-tx')
+  @Post('payments-tx')
   @HttpCode(200)
-  @VerifyWebhook('payfast')
-  async payfastInTransaction(@IncomingWebhook() webhook: IncomingWebhook<PaymentEvent>) {
+  @VerifyWebhook('payments')
+  async paymentsInTransaction(@IncomingWebhook() webhook: IncomingWebhook<PaymentEvent>) {
     const store = this.outboxStore();
     const result = await store.transaction((tx) => webhook.processInTransaction(tx, () => (this.ledger.paid += 1)));
     return result;
@@ -116,13 +116,13 @@ class WebhooksController {
 }
 
 @Controller('both')
-@VerifyWebhook('payfast')
+@VerifyWebhook('payments')
 class BothLevelsController {
   constructor(private readonly ledger: Ledger) {}
 
   @Post()
   @HttpCode(200)
-  @VerifyWebhook('payfast')
+  @VerifyWebhook('payments')
   both(@IncomingWebhook() webhook: IncomingWebhook) {
     this.ledger.calls.push({ receiver: 'both', id: webhook.id, payload: webhook.payload });
   }
@@ -134,11 +134,11 @@ class BothLevelsController {
     WebhooksModule.forRoot({
       outgoing: false,
       receivers: {
-        payfast: { scheme: 'standard', secret: PAYFAST_SECRET },
-        shipco: { scheme: 'stripe', header: 'ShipCo-Signature', secret: SHIPCO_SECRET },
+        payments: { scheme: 'standard', secret: PAYMENTS_SECRET },
+        carrier: { scheme: 'stripe', header: 'Carrier-Signature', secret: CARRIER_SECRET },
         github: { scheme: 'github', secret: GITHUB_SECRET },
         shopify: { scheme: new ShopifyScheme(), secret: SHOPIFY_SECRET },
-        'every-time': { scheme: 'standard', secret: PAYFAST_SECRET, dedupe: false },
+        'every-time': { scheme: 'standard', secret: PAYMENTS_SECRET, dedupe: false },
       },
     }),
   ],
@@ -171,30 +171,30 @@ describe.each(adapters.map((a) => a.name))('receiving webhooks on %s', (adapter)
 
   const post = (path: string, signed: { body: string; headers: Record<string, string> }) =>
     request(app.getHttpServer()).post(path).set(signed.headers).send(signed.body);
-  const payfast = (data: PaymentEvent['data'], options: { id?: string; timestamp?: Date; secret?: string } = {}) =>
-    signWebhook({ scheme: 'standard', secret: options.secret ?? PAYFAST_SECRET, payload: { type: 'payment.succeeded', data }, ...options });
+  const payment = (data: PaymentEvent['data'], options: { id?: string; timestamp?: Date; secret?: string } = {}) =>
+    signWebhook({ scheme: 'standard', secret: options.secret ?? PAYMENTS_SECRET, payload: { type: 'payment.succeeded', data }, ...options });
 
   it('verifies the signature on the raw body and hands the handler the parsed payload', async () => {
     // Formatting a re-serialized body would lose: spacing, key order, 1.10.
     const body = '{ "type": "payment.succeeded",\n  "data": { "orderId": "o-1", "amount": 1.10, "note": "\\u00fc" } }';
-    const signed = signWebhook({ scheme: 'standard', secret: PAYFAST_SECRET, payload: body, id: 'msg_1' });
-    const response = await post('/webhooks/payfast', signed).expect(200);
+    const signed = signWebhook({ scheme: 'standard', secret: PAYMENTS_SECRET, payload: body, id: 'msg_1' });
+    const response = await post('/webhooks/payments', signed).expect(200);
     expect(response.body).toEqual({ received: 'msg_1' });
     expect(ledger.calls).toEqual([
-      { receiver: 'payfast', id: 'msg_1', payload: { type: 'payment.succeeded', data: { orderId: 'o-1', amount: 1.1, note: 'ü' } } },
+      { receiver: 'payments', id: 'msg_1', payload: { type: 'payment.succeeded', data: { orderId: 'o-1', amount: 1.1, note: 'ü' } } },
     ]);
   });
 
   it('refuses a bad signature, a wrong secret, a stale timestamp and missing headers with a 401, without saying why', async () => {
-    const valid = payfast({ orderId: 'o-1' });
+    const valid = payment({ orderId: 'o-1' });
     const cases = [
       { ...valid, body: valid.body.replace('o-1', 'o-2') },
-      payfast({ orderId: 'o-1' }, { secret: `whsec_${Buffer.alloc(32, 1).toString('base64')}` }),
-      payfast({ orderId: 'o-1' }, { timestamp: new Date(Date.now() - 10 * 60_000) }),
+      payment({ orderId: 'o-1' }, { secret: `whsec_${Buffer.alloc(32, 1).toString('base64')}` }),
+      payment({ orderId: 'o-1' }, { timestamp: new Date(Date.now() - 10 * 60_000) }),
       { ...valid, headers: { 'content-type': 'application/json' } },
     ];
     for (const signed of cases) {
-      const response = await post('/webhooks/payfast', signed).expect(401);
+      const response = await post('/webhooks/payments', signed).expect(401);
       expect(response.body).toEqual({ message: 'Webhook signature verification failed', error: 'Unauthorized', statusCode: 401 });
     }
 
@@ -208,57 +208,57 @@ describe.each(adapters.map((a) => a.name))('receiving webhooks on %s', (adapter)
   });
 
   it('answers a redelivery of a processed webhook id with an empty 2xx, without running the handler', async () => {
-    const first = payfast({ orderId: 'o-1' }, { id: 'msg_dup' });
-    await post('/webhooks/payfast', first).expect(200, { received: 'msg_dup' });
+    const first = payment({ orderId: 'o-1' }, { id: 'msg_dup' });
+    await post('/webhooks/payments', first).expect(200, { received: 'msg_dup' });
     // The sender retries (our 200 was lost): same id, a new timestamp and signature.
-    const again = payfast({ orderId: 'o-1' }, { id: 'msg_dup', timestamp: new Date(Date.now() + 1_000) });
-    const response = await post('/webhooks/payfast', again).expect(200);
+    const again = payment({ orderId: 'o-1' }, { id: 'msg_dup', timestamp: new Date(Date.now() + 1_000) });
+    const response = await post('/webhooks/payments', again).expect(200);
     expect(response.text).toBe('');
     expect(ledger.calls).toHaveLength(1);
     // Another receiver's id space is its own.
-    await post('/webhooks/every-time', payfast({ orderId: 'o-1' }, { id: 'msg_dup' })).expect(200);
+    await post('/webhooks/every-time', payment({ orderId: 'o-1' }, { id: 'msg_dup' })).expect(200);
     expect(ledger.calls).toHaveLength(2);
   });
 
   it('records the id only after the handler succeeds, so a failed delivery is processed on retry', async () => {
-    await post('/webhooks/payfast', payfast({ orderId: 'o-1', fail: true }, { id: 'msg_retry' })).expect(500);
-    await post('/webhooks/payfast', payfast({ orderId: 'o-1' }, { id: 'msg_retry' })).expect(200);
-    await post('/webhooks/payfast', payfast({ orderId: 'o-1' }, { id: 'msg_retry' })).expect(200, '');
+    await post('/webhooks/payments', payment({ orderId: 'o-1', fail: true }, { id: 'msg_retry' })).expect(500);
+    await post('/webhooks/payments', payment({ orderId: 'o-1' }, { id: 'msg_retry' })).expect(200);
+    await post('/webhooks/payments', payment({ orderId: 'o-1' }, { id: 'msg_retry' })).expect(200, '');
     expect(ledger.calls.map((c) => (c.payload as PaymentEvent).data.fail ?? false)).toEqual([true, false]);
   });
 
   it('runs the handler once for two copies arriving together', async () => {
-    const signed = payfast({ orderId: 'o-1', slow: true }, { id: 'msg_race' });
-    const [a, b] = await Promise.all([post('/webhooks/payfast', signed), post('/webhooks/payfast', signed)]);
+    const signed = payment({ orderId: 'o-1', slow: true }, { id: 'msg_race' });
+    const [a, b] = await Promise.all([post('/webhooks/payments', signed), post('/webhooks/payments', signed)]);
     expect([a.status, b.status]).toEqual([200, 200]);
     expect(ledger.calls).toHaveLength(1);
   });
 
   it('makes effects exactly-once with processInTransaction()', async () => {
-    const signed = payfast({ orderId: 'o-1' }, { id: 'msg_tx' });
-    expect((await post('/webhooks/payfast-tx', signed).expect(200)).body).toEqual({ duplicate: false, result: 1 });
-    await post('/webhooks/payfast-tx', signed).expect(200, '');
+    const signed = payment({ orderId: 'o-1' }, { id: 'msg_tx' });
+    expect((await post('/webhooks/payments-tx', signed).expect(200)).body).toEqual({ duplicate: false, result: 1 });
+    await post('/webhooks/payments-tx', signed).expect(200, '');
     expect(ledger.paid).toBe(1);
   });
 
   it('runs every delivery when the receiver turns deduplication off', async () => {
-    const signed = payfast({ orderId: 'o-1' }, { id: 'msg_again' });
+    const signed = payment({ orderId: 'o-1' }, { id: 'msg_again' });
     await post('/webhooks/every-time', signed).expect(200);
     await post('/webhooks/every-time', signed).expect(200);
     expect(ledger.calls).toHaveLength(2);
   });
 
-  it("verifies ShipCo's Stripe-like header, keyed by the signed event id", async () => {
+  it("verifies the carrier's Stripe-like header, keyed by the signed event id", async () => {
     const signed = signWebhook({
       scheme: 'stripe',
-      header: 'ShipCo-Signature',
-      secret: SHIPCO_SECRET,
+      header: 'Carrier-Signature',
+      secret: CARRIER_SECRET,
       payload: { id: 'evt_1', type: 'shipment.delivered', data: { orderId: 'o-1' } },
     });
-    await post('/webhooks/shipco', signed).expect(200);
-    await post('/webhooks/shipco', signed).expect(200);
-    expect(ledger.calls).toEqual([{ receiver: 'shipco', id: 'evt_1', payload: { id: 'evt_1', type: 'shipment.delivered', data: { orderId: 'o-1' } } }]);
-    await post('/webhooks/shipco', { ...signed, headers: { ...signed.headers, 'shipco-signature': signed.headers['shipco-signature']!.replace('v1=', 'v1=0') } }).expect(401);
+    await post('/webhooks/carrier', signed).expect(200);
+    await post('/webhooks/carrier', signed).expect(200);
+    expect(ledger.calls).toEqual([{ receiver: 'carrier', id: 'evt_1', payload: { id: 'evt_1', type: 'shipment.delivered', data: { orderId: 'o-1' } } }]);
+    await post('/webhooks/carrier', { ...signed, headers: { ...signed.headers, 'carrier-signature': signed.headers['carrier-signature']!.replace('v1=', 'v1=0') } }).expect(401);
   });
 
   it("verifies GitHub's signature, and a custom scheme", async () => {
@@ -277,17 +277,17 @@ describe.each(adapters.map((a) => a.name))('receiving webhooks on %s', (adapter)
   });
 
   it('refuses a body the framework would not keep raw (415), and a signed body that is not JSON (400)', async () => {
-    const signed = payfast({ orderId: 'o-1' });
-    await post('/webhooks/payfast', { ...signed, headers: { ...signed.headers, 'content-type': 'text/plain' } }).expect(415);
-    const notJson = signWebhook({ scheme: 'standard', secret: PAYFAST_SECRET, payload: 'plain text' });
+    const signed = payment({ orderId: 'o-1' });
+    await post('/webhooks/payments', { ...signed, headers: { ...signed.headers, 'content-type': 'text/plain' } }).expect(415);
+    const notJson = signWebhook({ scheme: 'standard', secret: PAYMENTS_SECRET, payload: 'plain text' });
     // application/json that isn't JSON: the body parser refuses it first.
-    const response = await post('/webhooks/payfast', notJson);
+    const response = await post('/webhooks/payments', notJson);
     expect(response.status).toBe(400);
     expect(ledger.calls).toEqual([]);
   });
 
   it('verifies once and deduplicates once with @VerifyWebhook() on the controller and the method', async () => {
-    const signed = payfast({ orderId: 'o-1' }, { id: 'msg_both' });
+    const signed = payment({ orderId: 'o-1' }, { id: 'msg_both' });
     await post('/both', signed).expect(200);
     await post('/both', signed).expect(200);
     expect(ledger.calls).toHaveLength(1);
@@ -300,8 +300,8 @@ describe.each(adapters.map((a) => a.name))('configuration mistakes on %s', (adap
     const app = await start(adapter, ReceiverModule, false, logger);
     try {
       await request(app.getHttpServer())
-        .post('/webhooks/payfast')
-        .set(signWebhook({ scheme: 'standard', secret: PAYFAST_SECRET, payload: { a: 1 } }).headers)
+        .post('/webhooks/payments')
+        .set(signWebhook({ scheme: 'standard', secret: PAYMENTS_SECRET, payload: { a: 1 } }).headers)
         .send('{"a":1}')
         .expect(500);
       expect(logger.lines.some((line) => line.includes('NestFactory.create(AppModule, { rawBody: true })'))).toBe(true);
@@ -321,39 +321,39 @@ describe('startup checks', () => {
 
   @Controller()
   class Unknown {
-    @Post() @VerifyWebhook('paypal') hook() {}
+    @Post() @VerifyWebhook('refunds') hook() {}
   }
 
   it('fails when @VerifyWebhook() names a receiver that is not configured', async () => {
     await expect(
-      compile([OutboxModule.forRoot({ relay: { enabled: false } }), WebhooksModule.forRoot({ outgoing: false, receivers: { payfast: { scheme: 'standard', secret: PAYFAST_SECRET } } })], [Unknown]),
-    ).rejects.toThrow("Unknown.hook: @VerifyWebhook('paypal') names no receiver. Configured in WebhooksModule `receivers`: payfast.");
+      compile([OutboxModule.forRoot({ relay: { enabled: false } }), WebhooksModule.forRoot({ outgoing: false, receivers: { payments: { scheme: 'standard', secret: PAYMENTS_SECRET } } })], [Unknown]),
+    ).rejects.toThrow("Unknown.hook: @VerifyWebhook('refunds') names no receiver. Configured in WebhooksModule `receivers`: payments.");
   });
 
   @Controller()
-  class Payfast {
-    @Post() @VerifyWebhook('payfast') hook() {}
+  class Payments {
+    @Post() @VerifyWebhook('payments') hook() {}
   }
 
   it('fails when a receiver deduplicates and there is no outbox, or when sending without one', async () => {
-    const receivers = { payfast: { scheme: 'standard' as const, secret: PAYFAST_SECRET } };
-    await expect(compile([WebhooksModule.forRoot({ outgoing: false, receivers })], [Payfast])).rejects.toThrow(
-      /Payfast.hook: receiver "payfast" deduplicates webhook ids with OutboxInbox, from @nestjs\/outbox/,
+    const receivers = { payments: { scheme: 'standard' as const, secret: PAYMENTS_SECRET } };
+    await expect(compile([WebhooksModule.forRoot({ outgoing: false, receivers })], [Payments])).rejects.toThrow(
+      /Payments.hook: receiver "payments" deduplicates webhook ids with OutboxInbox, from @nestjs\/outbox/,
     );
-    const app = await compile([WebhooksModule.forRoot({ outgoing: false, receivers: { payfast: { ...receivers.payfast, dedupe: false } } })], [Payfast]);
+    const app = await compile([WebhooksModule.forRoot({ outgoing: false, receivers: { payments: { ...receivers.payments, dedupe: false } } })], [Payments]);
     await app.close();
     await expect(compile([WebhooksModule.forRoot({})])).rejects.toThrow(/WebhooksModule needs @nestjs\/outbox to send webhooks/);
   });
 
   it.each([
-    [{ payfast: { scheme: 'standard', secret: 'whsec_tooshort' } }, /receivers.payfast.secret: a Standard Webhooks secret/],
-    [{ payfast: { scheme: 'standard', secret: `${PAYFAST_SECRET}\n` } }, /receivers.payfast.secret: the secret starts or ends with whitespace/],
-    [{ payfast: { scheme: 'standard', secret: [PAYFAST_SECRET, ''] } }, /receivers.payfast.secret\[1\]: the secret is empty/],
-    [{ payfast: { scheme: 'standard', secret: [] } }, /receivers.payfast.secret lists no secret/],
-    [{ payfast: { scheme: 'hmac', secret: 'x' } }, /receivers.payfast.scheme must be "standard", "stripe", "github"/],
-    [{ payfast: { scheme: ShopifyScheme, secret: 'x' } }, /receivers.payfast.scheme is a class; pass an instance/],
-    [{ payfast: { scheme: 'stripe', secret: 'x', header: 'bad header' } }, /receivers.payfast.header must be a header name/],
-    [{ payfast: { scheme: 'standard', secret: PAYFAST_SECRET, tolerance: '5 minutes' } }, /receivers.payfast.tolerance: Invalid duration/],
+    [{ payments: { scheme: 'standard', secret: 'whsec_tooshort' } }, /receivers.payments.secret: a Standard Webhooks secret/],
+    [{ payments: { scheme: 'standard', secret: `${PAYMENTS_SECRET}\n` } }, /receivers.payments.secret: the secret starts or ends with whitespace/],
+    [{ payments: { scheme: 'standard', secret: [PAYMENTS_SECRET, ''] } }, /receivers.payments.secret\[1\]: the secret is empty/],
+    [{ payments: { scheme: 'standard', secret: [] } }, /receivers.payments.secret lists no secret/],
+    [{ payments: { scheme: 'hmac', secret: 'x' } }, /receivers.payments.scheme must be "standard", "stripe", "github"/],
+    [{ payments: { scheme: ShopifyScheme, secret: 'x' } }, /receivers.payments.scheme is a class; pass an instance/],
+    [{ payments: { scheme: 'stripe', secret: 'x', header: 'bad header' } }, /receivers.payments.header must be a header name/],
+    [{ payments: { scheme: 'standard', secret: PAYMENTS_SECRET, tolerance: '5 minutes' } }, /receivers.payments.tolerance: Invalid duration/],
     [{ 'pay fast': { scheme: 'github', secret: 'x' } }, /receivers.pay fast: a receiver name/],
   ])('refuses receivers %j', async (receivers, message) => {
     await expect(compile([OutboxModule.forRoot({ relay: { enabled: false } }), WebhooksModule.forRoot({ outgoing: false, receivers: receivers as never })])).rejects.toThrow(message);

@@ -1,7 +1,7 @@
 /**
  * Both directions over real HTTP: one app sends through the default transport, another
  * (Express, then Fastify) verifies with `@VerifyWebhook()` and deduplicates. What a partner
- * of Acme Books runs, and what Acme runs for PayFast.
+ * of the store runs, and what the store runs for its payment provider.
  */
 import { Controller, HttpCode, Injectable, Module, Post, type INestApplication } from '@nestjs/common';
 import { OutboxModule } from '@nestjs/outbox';
@@ -19,19 +19,19 @@ class Received {
   readonly webhooks: { id: string; type: string; data: unknown }[] = [];
 }
 
-@Controller('acme')
+@Controller('store')
 class PartnerController {
   constructor(private readonly received: Received) {}
 
   @Post('webhooks')
   @HttpCode(204)
-  @VerifyWebhook('acme')
+  @VerifyWebhook('store')
   receive(@IncomingWebhook() webhook: IncomingWebhook<{ type: string; data: unknown }>) {
     this.received.webhooks.push({ id: webhook.id, type: webhook.payload.type, data: webhook.payload.data });
   }
 
   @Post('slow')
-  @VerifyWebhook('acme')
+  @VerifyWebhook('store')
   async slow() {
     await sleep(1_000);
   }
@@ -41,7 +41,7 @@ function partnerModule(secrets: string[]) {
   @Module({
     imports: [
       OutboxModule.forRoot({ relay: { enabled: false } }),
-      WebhooksModule.forRoot({ outgoing: false, receivers: { acme: { scheme: 'standard', secret: secrets } } }),
+      WebhooksModule.forRoot({ outgoing: false, receivers: { store: { scheme: 'standard', secret: secrets } } }),
     ],
     controllers: [PartnerController],
     providers: [Received],
@@ -76,58 +76,58 @@ describe.each(adapters.map((a) => a.name))('delivering to a partner running %s',
 
   it('sends a signed webhook the partner verifies, once, and logs the response', async () => {
     await startPartner([SECRET]);
-    const acme = await sender();
-    const endpoint = await acme.endpoints.create({ url: `${url}/acme/webhooks`, eventTypes: ['*'], tenant: 'shop-1', secret: SECRET });
-    const message = await acme.transaction((tx) => acme.webhooks.dispatch(tx, { type: 'order.shipped', tenant: 'shop-1', data: { orderId: 'o-1' } }));
-    expect(await acme.flush()).toMatchObject({ delivered: 1 });
+    const store = await sender();
+    const endpoint = await store.endpoints.create({ url: `${url}/store/webhooks`, eventTypes: ['*'], tenant: 'shop-1', secret: SECRET });
+    const message = await store.transaction((tx) => store.webhooks.dispatch(tx, { type: 'order.shipped', tenant: 'shop-1', data: { orderId: 'o-1' } }));
+    expect(await store.flush()).toMatchObject({ delivered: 1 });
     expect(partner.get(Received).webhooks).toEqual([{ id: message.id, type: 'order.shipped', data: { orderId: 'o-1' } }]);
 
     // A replay reaches the partner with the same id, and its inbox skips it.
-    const [delivery] = await acme.deliveries.list({ endpointId: endpoint.id });
-    await acme.deliveries.retry(delivery!.id);
-    await acme.worker.runOnce();
+    const [delivery] = await store.deliveries.list({ endpointId: endpoint.id });
+    await store.deliveries.retry(delivery!.id);
+    await store.worker.runOnce();
     expect(partner.get(Received).webhooks).toHaveLength(1);
 
-    const details = await acme.deliveries.get(delivery!.id);
+    const details = await store.deliveries.get(delivery!.id);
     expect(details!.history.map((a) => a.statusCode)).toEqual([204, 204]); // the route's status, handler or not
-    await acme.close();
+    await store.close();
   });
 
   it('keeps delivering through a secret rotation: the partner switches secrets during the overlap', async () => {
     const clock = controllableClock();
     await startPartner([SECRET]);
-    const acme = await sender({ secretRotationOverlap: '1h' });
-    const endpoint = await acme.endpoints.create({ url: `${url}/acme/webhooks`, eventTypes: ['*'], secret: SECRET });
-    await acme.endpoints.rotateSecret(endpoint.id, { secret: NEXT });
+    const store = await sender({ secretRotationOverlap: '1h' });
+    const endpoint = await store.endpoints.create({ url: `${url}/store/webhooks`, eventTypes: ['*'], secret: SECRET });
+    await store.endpoints.rotateSecret(endpoint.id, { secret: NEXT });
     const send = async () => {
-      await acme.transaction((tx) => acme.webhooks.dispatch(tx, { type: 'a.b', data: {} }));
-      return acme.flush();
+      await store.transaction((tx) => store.webhooks.dispatch(tx, { type: 'a.b', data: {} }));
+      return store.flush();
     };
     expect(await send()).toMatchObject({ delivered: 1 }); // the partner still has the old secret only
     await partner.close();
     await startPartner([NEXT]); // it deploys the new one (on another port here)
-    await acme.endpoints.update(endpoint.id, { url: `${url}/acme/webhooks` });
+    await store.endpoints.update(endpoint.id, { url: `${url}/store/webhooks` });
     expect(await send()).toMatchObject({ delivered: 1 });
     clock.advance(60 * 60_000 + 1);
     expect(await send()).toMatchObject({ delivered: 1 });
     await partner.close();
     await startPartner([SECRET]); // an old deployment, after the overlap: refused
-    await acme.endpoints.update(endpoint.id, { url: `${url}/acme/webhooks` });
+    await store.endpoints.update(endpoint.id, { url: `${url}/store/webhooks` });
     expect(await send()).toMatchObject({ retried: 1 });
-    expect((await acme.deliveries.list({ status: 'pending' }))[0]!.lastStatusCode).toBe(401);
-    await acme.close();
+    expect((await store.deliveries.list({ status: 'pending' }))[0]!.lastStatusCode).toBe(401);
+    await store.close();
   });
 
   it('retries when the partner is down, and times out a slow partner', async () => {
     await startPartner([SECRET]);
-    const acme = await sender();
-    await acme.endpoints.create({ url: `${url}/acme/slow`, eventTypes: ['slow.one'], secret: SECRET });
-    await acme.endpoints.create({ url: 'http://127.0.0.1:9/unreachable', eventTypes: ['down.one'], secret: SECRET });
-    await acme.transaction((tx) => acme.webhooks.dispatch(tx, [{ type: 'slow.one', data: {} }, { type: 'down.one', data: {} }]));
-    expect(await acme.flush()).toMatchObject({ retried: 2 });
+    const store = await sender();
+    await store.endpoints.create({ url: `${url}/store/slow`, eventTypes: ['slow.one'], secret: SECRET });
+    await store.endpoints.create({ url: 'http://127.0.0.1:9/unreachable', eventTypes: ['down.one'], secret: SECRET });
+    await store.transaction((tx) => store.webhooks.dispatch(tx, [{ type: 'slow.one', data: {} }, { type: 'down.one', data: {} }]));
+    expect(await store.flush()).toMatchObject({ retried: 2 });
 
-    const errors = (await acme.deliveries.list({})).map((d) => d.lastError).sort();
+    const errors = (await store.deliveries.list({})).map((d) => d.lastError).sort();
     expect(errors).toEqual([expect.stringMatching(/ECONNREFUSED/), 'WebhookDeliveryTimeoutError: No response within 500ms']);
-    await acme.close();
+    await store.close();
   });
 });

@@ -150,7 +150,7 @@ describe('checkDestination (URLs, before any DNS)', () => {
   });
 
   it('accepts a public https URL, and http only when allowed', () => {
-    expect(checkDestination('https://hooks.example.com/acme?x=1', policy, false).url?.href).toBe('https://hooks.example.com/acme?x=1');
+    expect(checkDestination('https://hooks.example.com/store?x=1', policy, false).url?.href).toBe('https://hooks.example.com/store?x=1');
     expect(checkDestination('http://hooks.example.com/', policy, true).url).toBeDefined();
   });
 });

@@ -69,9 +69,9 @@ function endpoint(overrides: Partial<WebhookEndpointRecord> = {}): WebhookEndpoi
   return {
     id: prefixedId('ep'),
     tenant: 'shop-1',
-    url: 'https://hooks.example.com/acme?token=a%20b',
+    url: 'https://hooks.example.com/store?token=a%20b',
     eventTypes: ['order.shipped', 'order.cancelled'],
-    description: "Bücher & Co's endpoint",
+    description: "The cat shelter's endpoint (Kätzchen & Kibble)",
     enabled: true,
     disabledReason: null,
     failingSince: null,
