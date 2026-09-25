@@ -277,6 +277,28 @@ describe('retries', () => {
     await t.close();
   });
 
+  it.each(['1.5', '-3', 'Thu, 24 Sep 2026'])('ignores a malformed Retry-After (%j) and pauses the endpoint for the default 5s', async (retryAfter) => {
+    const clock = controllableClock();
+    const t = await sendingApp({ retry: noJitter, worker: { batchSize: 2 } });
+    const busy = await t.endpoints.create({ url: 'https://busy.example/', eventTypes: ['*'] });
+    t.transport.respondWith({ statusCode: 503, headers: { 'retry-after': retryAfter } });
+    await t.transaction((tx) => t.webhooks.dispatch(tx, [{ type: 'a.b', data: 1 }, { type: 'a.b', data: 2 }]));
+    await t.relay.runOnce();
+
+    expect(await t.worker.runOnce()).toMatchObject({ claimed: 2, retried: 1, released: 1 });
+    const [released] = (await t.deliveries.list({ endpointId: busy.id })).filter((d) => d.attempts === 0);
+    expect(released!.nextAttemptAt! - Date.now()).toBeGreaterThan(4_000);
+
+    // Read as a date long past, it would have been "retry now": the released delivery would go out at once.
+    expect(await t.worker.runOnce()).toMatchObject({ claimed: 0 });
+    expect(t.transport.filter({ endpointId: busy.id })).toHaveLength(1);
+
+    clock.advance(5_000);
+    await t.worker.runOnce();
+    expect(t.transport.filter({ endpointId: busy.id }).length).toBeGreaterThan(1);
+    await t.close();
+  });
+
   it('keeps at most delivery.maxResponseSize of the response in the log, whatever the transport returns', async () => {
     const t = await sendingApp({ delivery: { maxResponseSize: 8_000 } });
     await t.endpoints.create({ url: 'https://a.example/', eventTypes: ['*'] });
