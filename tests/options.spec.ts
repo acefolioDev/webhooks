@@ -1,5 +1,5 @@
 /**
- * Options: the defaults the README promises, and the startup errors module.spec.ts doesn't
+ * Options: the defaults the docs page promises, and the startup errors module.spec.ts doesn't
  * list, each naming its option.
  */
 import { Injectable } from '@nestjs/common';

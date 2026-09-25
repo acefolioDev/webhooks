@@ -12,8 +12,8 @@ import type { WebhookEndpointDisabledReason, WebhookEndpoint } from './webhook-e
  * No method takes the application's transaction: the outbox carries a dispatched message
  * out of the transaction, and everything here runs on the store's own connection. Every
  * method may return its result or a promise of it. `@nestjs/webhooks/testing` exports
- * `webhookEndpointStoreContract()`, the suite every implementation passes; the README's
- * "Implementing a store" states each rule and the race it prevents.
+ * `webhookEndpointStoreContract()`, the suite every implementation passes. Each method's
+ * rule, and the race it prevents: https://docs.nestjs.com/http/webhooks#the-store-contract
  */
 export interface WebhookEndpointStore {
   /** Inserts the endpoint. Its `id` is new; its secrets are newest first. */

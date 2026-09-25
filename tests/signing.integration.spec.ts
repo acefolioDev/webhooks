@@ -1,7 +1,7 @@
 /**
  * Signatures end to end: the store's worker sends to a partner that verifies with each scheme the
- * README lists (Standard Webhooks as sent, and Stripe-style, GitHub and a custom Shopify
- * scheme through a transport that re-signs, the README's recipe), secrets rotating while a
+ * docs page lists (Standard Webhooks as sent, and Stripe-style, GitHub and a custom Shopify
+ * scheme through a transport that re-signs), secrets rotating while a
  * delivery is being retried, and what someone who captured a request can do with it: a copy
  * inside the tolerance is skipped by the inbox, an old or tampered one is refused.
  */

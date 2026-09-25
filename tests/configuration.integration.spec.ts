@@ -1,5 +1,5 @@
 /**
- * The module configured as the README's walkthrough does, from injected configuration, and
+ * The module configured as the docs page's tutorial does, from injected configuration, and
  * what those options change on the wire between two real apps: `forRootAsync()` with
  * `useFactory` and with `useClass`, `eventTypes` guarding both the partner API and
  * `dispatch()` (inside the transaction), and the `userAgent` the partner sees. Then the

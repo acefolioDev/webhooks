@@ -27,12 +27,17 @@ export interface StripeWebhookReceiverOptions {
 
 /**
  * GitHub's scheme (`X-Hub-Signature-256: sha256=…`: hex HMAC-SHA256 of the body). It signs no
- * timestamp and no id, so a captured delivery verifies forever: see the README.
+ * timestamp and no id, so a captured delivery verifies forever, and one replayed with a new
+ * `X-GitHub-Delivery` header isn't deduplicated either. Key `id` on the signed body to skip
+ * replays the inbox still remembers: https://docs.nestjs.com/http/webhooks#other-senders
  */
 export interface GitHubWebhookReceiverOptions {
   scheme: 'github';
   secret: string | readonly string[];
-  /** Default: the `X-GitHub-Delivery` header (not signed). */
+  /**
+   * The deduplication id. Default: the `X-GitHub-Delivery` header, which isn't signed: whoever
+   * replays a captured request can set a new one.
+   */
   id?: (payload: any, headers: WebhookHeaders) => string;
 }
 

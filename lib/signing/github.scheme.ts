@@ -3,7 +3,11 @@ import type { WebhookSignedRequest, WebhookSignatureCheck } from '../interfaces/
 import { header, missing, malformed, NO_MATCH, HEX_SHA256 } from './signature.util.js';
 import { WebhookSignatureScheme } from './webhook-signature.scheme.js';
 
-/** GitHub: `X-Hub-Signature-256: sha256=<hex HMAC-SHA256 of the body>`. No timestamp, no signed id. */
+/**
+ * GitHub: `X-Hub-Signature-256: sha256=<hex HMAC-SHA256 of the body>`. No timestamp and no
+ * signed id: a captured request verifies forever, and the id it returns, `X-GitHub-Delivery`,
+ * is whatever the sender (or someone replaying the request) puts in that header.
+ */
 export class GitHubScheme extends WebhookSignatureScheme {
   verify({ headers, rawBody }: WebhookSignedRequest, keys: readonly Buffer[]): WebhookSignatureCheck {
     const value = header(headers, 'x-hub-signature-256');

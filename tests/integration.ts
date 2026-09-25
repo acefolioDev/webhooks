@@ -6,7 +6,7 @@
  *   `/partners/:tenant/...`, the package's errors answered with their status), and an orders
  *   route that dispatches inside the application's transaction. The relay and the worker run
  *   by hand (`flush()`) unless a test turns them on.
- * - a receiver, a partner: `@VerifyWebhook()` routes for every scheme the README lists, whose
+ * - a receiver, a partner: `@VerifyWebhook()` routes for every scheme the docs page lists, whose
  *   answers a test scripts (a status, `Retry-After`, a redirect, a hang, a handler that throws).
  */
 import {
@@ -461,7 +461,7 @@ export type Sender = Awaited<ReturnType<typeof startSender>>;
 // ------------------------------------------------------------------ transports and observation
 
 /**
- * The README's answer to "a partner that wants a Stripe-style header": a custom transport that
+ * The answer to "a partner that wants a Stripe-style header": a custom transport that
  * re-signs. It keeps the package's delivery (the SSRF-guarded HTTP transport underneath) and
  * rewrites the signature for the scheme the endpoint's path names, with the endpoint's secret.
  */
