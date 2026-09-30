@@ -226,9 +226,10 @@ function productionError(missing: WebhooksStorageContract[]): string {
   return (
     `WebhooksStorage: no store is registered for ${and(missing.map((contract, i) => `\`${contract}\` (${specs[i]!.interfaceName})`))}, ` +
     `and NODE_ENV is "production": in memory, ${and(specs.map((spec) => spec.holds))} would be lost on restart and not ` +
-    `shared between instances. Implement ${and(specs.map((spec) => spec.interfaceName))} in a provider that injects ` +
-    `WebhooksStorage and calls \`storage.registerSource({ ${example} })\` in its constructor, or set ` +
-    '`allowInMemoryStorage: true` in the WebhooksModule options to run in memory anyway.'
+    'shared between instances. Register a store on your database: PostgresWebhookStore (@nestjs/webhooks/postgres), ' +
+    `MySqlWebhookStore (@nestjs/webhooks/mysql), or your own ${and(specs.map((spec) => spec.interfaceName))} in a ` +
+    `provider that injects WebhooksStorage and calls \`storage.registerSource({ ${example} })\` in its constructor. Or ` +
+    'set `allowInMemoryStorage: true` in the WebhooksModule options to run in memory anyway.'
   );
 }
 

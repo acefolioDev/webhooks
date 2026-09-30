@@ -158,12 +158,16 @@ describe('WebhooksStorage', () => {
     await app.close();
   });
 
-  it('refuses to start in production in memory, naming the interfaces and the call', async () => {
+  it('refuses to start in production in memory, naming the first-party stores, the interfaces and the call', async () => {
     process.env.NODE_ENV = 'production';
     await expect(boot([])).rejects.toThrow(
-      'WebhooksStorage: no store is registered for `endpoints` (WebhookEndpointStore) and `deliveries` (WebhookDeliveryStore), and NODE_ENV is "production"',
+      'WebhooksStorage: no store is registered for `endpoints` (WebhookEndpointStore) and `deliveries` (WebhookDeliveryStore), and NODE_ENV is ' +
+        '"production": in memory, endpoints and their secrets and pending deliveries and the delivery log would be lost on restart and not shared ' +
+        'between instances. Register a store on your database: PostgresWebhookStore (@nestjs/webhooks/postgres), MySqlWebhookStore ' +
+        '(@nestjs/webhooks/mysql), or your own WebhookEndpointStore and WebhookDeliveryStore in a provider that injects WebhooksStorage and calls ' +
+        '`storage.registerSource({ endpoints: this, deliveries: this })` in its constructor. Or set `allowInMemoryStorage: true` in the ' +
+        'WebhooksModule options to run in memory anyway.',
     );
-    await expect(boot([])).rejects.toThrow('`storage.registerSource({ endpoints: this, deliveries: this })`');
 
     const allowed = await boot([], { allowInMemoryStorage: true });
     await allowed.app.close();
