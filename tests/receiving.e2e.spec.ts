@@ -264,17 +264,30 @@ describe('WebhookVerifier', () => {
     await close();
   });
 
-  it('refuses an id that is empty or longer than 256 characters, from a header or an id function', async () => {
+  it('refuses an id that is empty or longer than 255 characters (the inbox keeps 255), from a header or an id function', async () => {
     const { verifier: v, close } = await verifier({
       github: { scheme: 'github', secret: GITHUB },
       custom: { scheme: 'github', secret: GITHUB, id: (payload: { ref: string }) => payload.ref },
     });
-    const long = signWebhook({ scheme: 'github', secret: GITHUB, payload: { ref: '' }, id: 'd'.repeat(257) });
-    expect(() => v.verify('github', { headers: long.headers, rawBody: long.body })).toThrow(expect.objectContaining({ reason: 'missing-header', status: 401 }));
-    const exact = signWebhook({ scheme: 'github', secret: GITHUB, payload: { ref: '' }, id: 'd'.repeat(256) });
-    expect(v.verify('github', { headers: exact.headers, rawBody: exact.body }).id).toHaveLength(256);
+    const long = signWebhook({ scheme: 'github', secret: GITHUB, payload: { ref: '' }, id: 'd'.repeat(256) });
+    expect(() => v.verify('github', { headers: long.headers, rawBody: long.body })).toThrow(
+      expect.objectContaining({
+        reason: 'malformed-header',
+        status: 401,
+        message: 'Webhook from "github" refused (malformed-header): the webhook id is longer than 255 characters',
+      }),
+    );
+    const exact = signWebhook({ scheme: 'github', secret: GITHUB, payload: { ref: '' }, id: 'd'.repeat(255) });
+    expect(v.verify('github', { headers: exact.headers, rawBody: exact.body }).id).toHaveLength(255);
     // The id function's empty string is an answer, not a fall-through to the header.
-    expect(() => v.verify('custom', { headers: exact.headers, rawBody: exact.body })).toThrow(WebhookVerificationError);
+    expect(() => v.verify('custom', { headers: exact.headers, rawBody: exact.body })).toThrow(
+      expect.objectContaining({ reason: 'missing-header', message: expect.stringContaining('no webhook id') }),
+    );
+
+    // Characters as MySQL counts them: 255 emoji (510 UTF-16 units) are 255 characters, 256 are too many.
+    const emoji = (count: number) => signWebhook({ scheme: 'github', secret: GITHUB, payload: { ref: '😀'.repeat(count) } });
+    expect(v.verify('custom', { headers: emoji(255).headers, rawBody: emoji(255).body }).id).toBe('😀'.repeat(255));
+    expect(() => v.verify('custom', { headers: emoji(256).headers, rawBody: emoji(256).body })).toThrow(expect.objectContaining({ reason: 'malformed-header' }));
     await close();
   });
 

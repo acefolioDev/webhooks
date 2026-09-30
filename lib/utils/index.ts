@@ -2,6 +2,7 @@ export * from './backoff.util.js';
 export * from './describe-error.util.js';
 export * from './duration.util.js';
 export * from './encryption.util.js';
+export * from './inbox-keys.util.js';
 export * from './query.util.js';
 export * from './resolve-config.util.js';
 export * from './sql-rows.util.js';

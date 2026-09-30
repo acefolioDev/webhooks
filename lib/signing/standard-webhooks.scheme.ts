@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { exceedsInboxKey, MAX_INBOX_KEY_LENGTH } from '../utils/inbox-keys.util.js';
 import { standardSecretKey } from './secrets.util.js';
 import type { WebhookSignedRequest, WebhookSignatureCheck } from '../interfaces/webhook-signature.interface.js';
 import { header, missing, malformed, NO_MATCH, TIMESTAMP } from './signature.util.js';
@@ -31,8 +32,8 @@ export class StandardWebhooksScheme extends WebhookSignatureScheme {
     if (id === null || timestamp === null || signature === null) {
       return malformed('a webhook- header is repeated');
     }
-    if (id === '' || id.length > 256) {
-      return malformed('webhook-id is empty or longer than 256 characters');
+    if (id === '' || exceedsInboxKey(id)) {
+      return malformed(`webhook-id is empty or longer than ${MAX_INBOX_KEY_LENGTH} characters`);
     }
     if (!TIMESTAMP.test(timestamp)) {
       return malformed('webhook-timestamp is not a number of seconds');

@@ -195,7 +195,13 @@ describe('signature schemes: header handling', () => {
     const signature = `v1,${signStandard(key, 'msg_1', now, '{}')}`;
     const verify = (headers: Record<string, string | string[]>) => scheme.verify({ headers, rawBody: Buffer.from('{}') }, [key]);
     expect(verify({ 'webhook-id': ['msg_1'], 'webhook-timestamp': [String(now)], 'webhook-signature': [signature] })).toMatchObject({ valid: true, id: 'msg_1' });
-    expect(verify({ 'webhook-id': 'm'.repeat(257), 'webhook-timestamp': String(now), 'webhook-signature': signature })).toMatchObject({ reason: 'malformed-header' });
+    expect(verify({ 'webhook-id': 'm'.repeat(256), 'webhook-timestamp': String(now), 'webhook-signature': signature })).toMatchObject({
+      reason: 'malformed-header',
+      detail: 'webhook-id is empty or longer than 255 characters',
+    });
+    const longest = 'm'.repeat(255);
+    const signed = `v1,${signStandard(key, longest, now, '{}')}`;
+    expect(verify({ 'webhook-id': longest, 'webhook-timestamp': String(now), 'webhook-signature': signed })).toMatchObject({ valid: true, id: longest });
     expect(verify({ 'webhook-id': '', 'webhook-timestamp': String(now), 'webhook-signature': signature })).toMatchObject({ reason: 'malformed-header' });
     expect(verify({ 'webhook-id': 'msg_1', 'webhook-timestamp': String(now), 'webhook-signature': `v1a,xyz ${signature}` })).toMatchObject({ valid: true });
     expect(verify({ 'webhook-id': 'msg_1', 'webhook-timestamp': '1234567890123', 'webhook-signature': signature })).toMatchObject({ reason: 'malformed-header' });

@@ -1,5 +1,6 @@
 import { optionMs, positiveMs, resolveRetry } from './backoff.util.js';
 import { plaintextSecrets, SecretCipher } from './encryption.util.js';
+import { exceedsInboxKey, MAX_INBOX_KEY_LENGTH } from './inbox-keys.util.js';
 import { AddressPolicy } from '../network/address.policy.js';
 import { WebhookSignatureScheme } from '../signing/webhook-signature.scheme.js';
 import { GitHubScheme } from '../signing/github.scheme.js';
@@ -109,6 +110,12 @@ function compileReceivers(receivers: Record<string, WebhookReceiverOptions>): Ma
     const consumer = options.consumer ?? `webhooks:${name}`;
     if (typeof consumer !== 'string' || consumer === '') {
       throw new TypeError(`WebhooksModule: ${option}.consumer must be a non-empty string`);
+    }
+    if (exceedsInboxKey(consumer)) {
+      throw new TypeError(
+        `WebhooksModule: ${option}.consumer${options.consumer === undefined ? ' (webhooks:<receiver name>, the default)' : ''} is longer than ` +
+          `${MAX_INBOX_KEY_LENGTH} characters: the outbox's inbox keeps consumer names in ${MAX_INBOX_KEY_LENGTH}-character columns on MySQL. Set a shorter one.`,
+      );
     }
 
     compiled.set(name, {

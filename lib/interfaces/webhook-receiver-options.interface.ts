@@ -21,7 +21,10 @@ export interface StripeWebhookReceiverOptions {
   tolerance?: Duration;
   /** Default `'stripe-signature'`. */
   header?: string;
-  /** The deduplication id. Default: the payload's `id` (signed, unlike any header). */
+  /**
+   * The deduplication id, at most 255 characters (a longer one fails verification). Default:
+   * the payload's `id` (signed, unlike any header).
+   */
   id?: (payload: any) => string;
 }
 
@@ -35,8 +38,9 @@ export interface GitHubWebhookReceiverOptions {
   scheme: 'github';
   secret: string | readonly string[];
   /**
-   * The deduplication id. Default: the `X-GitHub-Delivery` header, which isn't signed: whoever
-   * replays a captured request can set a new one.
+   * The deduplication id, at most 255 characters (a longer one fails verification). Default:
+   * the `X-GitHub-Delivery` header, which isn't signed: whoever replays a captured request can
+   * set a new one.
    */
   id?: (payload: any, headers: WebhookHeaders) => string;
 }
@@ -60,7 +64,10 @@ export type WebhookReceiverOptions = (
    * id is recorded after the handler succeeds.
    */
   dedupe?: boolean;
-  /** The inbox consumer name. Default `webhooks:<receiver name>`. Keep it stable. */
+  /**
+   * The inbox consumer name, at most 255 characters (the outbox's inbox keeps it in a
+   * 255-character column on MySQL). Default `webhooks:<receiver name>`. Keep it stable.
+   */
   consumer?: string;
 };
 

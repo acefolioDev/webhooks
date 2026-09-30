@@ -101,6 +101,16 @@ describe('WebhooksModule startup errors', () => {
     ['an empty Stripe secret', { stripe: { scheme: 'stripe', secret: '' } }, /receivers.stripe.secret: the secret is empty/],
     ['an id that is not a function', { gh: { scheme: 'github', secret: 's', id: 'x-request-id' } }, /receivers.gh.id must be a function/],
     ['an empty consumer', { gh: { scheme: 'github', secret: 's', consumer: '' } }, /receivers.gh.consumer must be a non-empty string/],
+    [
+      'a consumer longer than the inbox keeps',
+      { gh: { scheme: 'github', secret: 's', consumer: 'c'.repeat(256) } },
+      /^WebhooksModule: receivers.gh.consumer is longer than 255 characters: the outbox's inbox keeps consumer names in 255-character columns on MySQL\. Set a shorter one\.$/,
+    ],
+    [
+      'a receiver name too long for its default consumer',
+      { ['r'.repeat(247)]: { scheme: 'github', secret: 's' } },
+      /receivers.r{247}.consumer \(webhooks:<receiver name>, the default\) is longer than 255 characters/,
+    ],
     ['a zero tolerance', { gh: { scheme: 'stripe', secret: 's', tolerance: 0 } }, /receivers.gh.tolerance must be longer than 0/],
     ['a receiver name with a slash', { 'pay/fast': { scheme: 'github', secret: 's' } }, /receivers.pay\/fast: a receiver name is letters, digits/],
   ])('refuses %s', async (_name, receivers, message) => {

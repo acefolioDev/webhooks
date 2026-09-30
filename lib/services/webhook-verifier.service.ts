@@ -6,8 +6,7 @@ import { WebhookVerificationError, type WebhookVerificationFailure } from '../er
 import { WebhooksEvents } from '../events/webhooks-events.service.js';
 import type { WebhookHeaders } from '../interfaces/webhook-receiver-options.interface.js';
 import type { IncomingWebhook, WebhookVerifyRequest } from '../interfaces/incoming-webhook.interface.js';
-
-const MAX_ID_LENGTH = 256;
+import { exceedsInboxKey, MAX_INBOX_KEY_LENGTH } from '../utils/inbox-keys.util.js';
 
 /**
  * Verifies incoming webhooks against the configured `receivers`. `@VerifyWebhook()` uses
@@ -28,7 +27,9 @@ export class WebhookVerifier {
   /**
    * Checks the signature with every configured secret, the timestamp against `tolerance`,
    * and parses the body as JSON. Throws `WebhookVerificationError` (status 401, or 400 for
-   * a body that isn't JSON), and an `Error` for a receiver that isn't configured.
+   * a body that isn't JSON), and an `Error` for a receiver that isn't configured. A webhook
+   * id longer than 255 characters (code points) is refused too (`malformed-header`): the
+   * outbox's inbox keeps ids in 255-character columns on MySQL, so it could never be recorded.
    */
   verify<T = unknown>(receiver: string, request: WebhookVerifyRequest): IncomingWebhook<T> {
     const config = this.config.receivers.get(receiver);
@@ -61,8 +62,11 @@ export class WebhookVerifier {
     }
 
     const id = config.id?.(payload, headers) ?? check.id ?? config.scheme.idFromPayload?.(payload, headers);
-    if (typeof id !== 'string' || id === '' || id.length > MAX_ID_LENGTH) {
+    if (typeof id !== 'string' || id === '') {
       this.fail(config, 'missing-header', 'no webhook id (a header or the payload id the scheme reads)');
+    }
+    if (exceedsInboxKey(id)) {
+      this.fail(config, 'malformed-header', `the webhook id is longer than ${MAX_INBOX_KEY_LENGTH} characters`);
     }
 
     return {
