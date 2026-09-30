@@ -1,0 +1,17 @@
+generator client {
+  provider = "prisma-client"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// The application's table: an application's Prisma client, which tests/postgres hands PostgresWebhookStore
+/// through fromPrisma().
+model Order {
+  id     String @id
+  status String
+
+  @@map("orders")
+}

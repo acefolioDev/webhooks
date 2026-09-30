@@ -105,5 +105,6 @@ export type {
   WebhooksStorageRegisterOptions,
   WebhooksStorageSources,
 } from './interfaces/index.js';
-// The default and test double. Production stores live on the app's database: the Drizzle recipe.
+// The default and test double. In production, the store lives in the app's database: PostgresWebhookStore
+// (@nestjs/webhooks/postgres), or one of the app's own.
 export * from './stores/index.js';

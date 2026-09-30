@@ -5,9 +5,10 @@ import type { WebhookEndpointDisabledReason, WebhookEndpoint } from './webhook-e
 
 /**
  * Where the endpoints (subscriptions) live: what `WebhookEndpoints` manages and the worker
- * reads before each attempt. The application implements it in a provider with whatever it
- * already uses and registers it: `WebhooksStorage.registerSource({ endpoints: this, deliveries: this })`.
- * Without one, the module uses `InMemoryWebhookStore`.
+ * reads before each attempt. `PostgresWebhookStore` (`@nestjs/webhooks/postgres`) implements
+ * it; so can a provider of the application's, with whatever it already uses, which registers
+ * itself: `WebhooksStorage.registerSource({ endpoints: this, deliveries: this })`. Without one,
+ * the module uses `InMemoryWebhookStore`.
  *
  * No method takes the application's transaction: the outbox carries a dispatched message
  * out of the transaction, and everything here runs on the store's own connection. Every
