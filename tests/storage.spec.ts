@@ -228,7 +228,7 @@ describe('InMemoryWebhookStore against the contracts', () => {
       });
     };
     const [race] = webhookEndpointStoreContract(() => ({ store: losing() }), { concurrent: true }).filter((c) =>
-      c.name.startsWith('two rotations'),
+      c.name.startsWith('rotations at once'),
     );
     await expect(race!.run()).rejects.toThrow(/a rotation was lost/);
   });

@@ -20,8 +20,10 @@ export interface WebhookStoreContractOptions {
    * Adds the concurrency cases: rotations and failures racing on one endpoint
    * (`webhookEndpointStoreContract()`); workers claiming side by side, fan-outs of one
    * message racing, a stale worker racing a takeover, a manual retry racing a claim
-   * (`webhookDeliveryStoreContract()`). On PGlite they pass serialized; run them against a
-   * server too. Default `false`.
+   * (`webhookDeliveryStoreContract()`). Each case first opens up to eight of the store's
+   * connections at once, so the racing calls don't start a connection apart. On PGlite they
+   * pass serialized; run them against a server too, through a pool of several connections.
+   * Default `false`.
    */
   concurrent?: boolean;
 }
@@ -127,6 +129,21 @@ function attempt(d: WebhookDelivery, n: number, at: number, statusCode: number |
 }
 
 const ids = (items: readonly { id: string }[]) => items.map((item) => item.id);
+
+/** How many calls a concurrency case runs at once. */
+const RACERS = 8;
+
+/**
+ * Makes `read` `RACERS` times at once, so a pooled store has its connections open before a
+ * race: a pool opens them on demand, and calls that each wait for a new connection start a
+ * handshake apart, so they would never overlap.
+ */
+async function openConnections(read: () => Awaitable<unknown>): Promise<void> {
+  await Promise.all(Array.from({ length: RACERS }, () => read()));
+}
+
+/** The ids that occur more than once in `list`. */
+const repeated = (list: readonly string[]) => [...new Set(list.filter((id, i) => list.indexOf(id) !== i))];
 
 // ------------------------------------------------------------------ endpoints
 
@@ -290,20 +307,31 @@ const ENDPOINT_CASES: Case<WebhookEndpointStore>[] = [
 
 const ENDPOINT_CONCURRENT: Case<WebhookEndpointStore>[] = [
   [
-    'two rotations at once both land',
+    'rotations at once all land: each keeps the secrets of the ones before it',
     async (store) => {
       const e = endpoint({ secrets: [{ secret: 'whsec_0', createdAt: 0, expiresAt: null }] });
       await store.createEndpoint(e);
+      await openConnections(() => store.getEndpoint(e.id));
 
-      await Promise.all([
-        store.addEndpointSecret(e.id, { secret: 'whsec_1', createdAt: 1, expiresAt: null }, 10_000, 1),
-        store.addEndpointSecret(e.id, { secret: 'whsec_2', createdAt: 1, expiresAt: null }, 10_000, 1),
-      ]);
+      // Rotations that read the secrets, then write them back without serializing on the
+      // endpoint's row, overwrite each other: every round races RACERS of them.
+      const expected = ['whsec_0'];
+      for (let round = 1; round <= 3; round++) {
+        const added = Array.from({ length: RACERS }, (_, i) => `whsec_${round}_${i}`);
+        const rotated = await Promise.all(
+          added.map((secret) => store.addEndpointSecret(e.id, { secret, createdAt: round, expiresAt: null }, 1_000_000, round)),
+        );
+        assert.deepEqual(rotated, Array(RACERS).fill(true));
+        expected.push(...added);
 
-      const secrets = (await store.getEndpoint(e.id))!.secrets.map((s) => s.secret);
-      assert.equal(secrets.length, 3, `a rotation was lost: ${secrets.join(', ')}`);
-      assert.deepEqual([...secrets].sort(), ['whsec_0', 'whsec_1', 'whsec_2']);
-      assert.equal((await store.getEndpoint(e.id))!.secrets.filter((s) => s.expiresAt === null).length, 1);
+        const secrets = (await store.getEndpoint(e.id))!.secrets;
+        const kept = secrets.map((s) => s.secret);
+        const lost = expected.filter((secret) => !kept.includes(secret));
+        assert.deepEqual(lost, [], `a rotation was lost in round ${round}: ${lost.join(', ')} (kept ${kept.length} of ${expected.length})`);
+        assert.deepEqual(repeated(kept), [], `a secret was kept twice in round ${round}`);
+        assert.equal(kept.length, expected.length);
+        assert.equal(secrets.filter((s) => s.expiresAt === null).length, 1, 'only the newest secret never expires');
+      }
     },
   ],
   [
@@ -311,8 +339,9 @@ const ENDPOINT_CONCURRENT: Case<WebhookEndpointStore>[] = [
     async (store) => {
       const e = endpoint({ failingSince: 1 });
       await store.createEndpoint(e);
+      await openConnections(() => store.getEndpoint(e.id));
       const results = await Promise.all(
-        Array.from({ length: 8 }, (_, i) => store.recordEndpointFailure(e.id, { at: 100 + i, disableIfFailingSince: 50, reason: 'failing' })),
+        Array.from({ length: RACERS }, (_, i) => store.recordEndpointFailure(e.id, { at: 100 + i, disableIfFailingSince: 50, reason: 'failing' })),
       );
       assert.equal(results.filter(Boolean).length, 1, `disabled by ${results.filter(Boolean).length} calls`);
       assert.equal((await store.getEndpoint(e.id))!.enabled, false);
@@ -571,24 +600,47 @@ const DELIVERY_CASES: Case<WebhookDeliveryStore>[] = [
 
 const DELIVERY_CONCURRENT: Case<WebhookDeliveryStore>[] = [
   [
-    'four workers claiming side by side never get the same delivery',
+    'workers claiming side by side never get the same delivery, and each holds the lease of all it got',
     async (store) => {
-      const m = message();
-      const all = Array.from({ length: 40 }, (_, i) => delivery(m, `ep_${i}`));
-      await store.createDeliveries(m, all);
+      await openConnections(() => store.getDelivery('dlv_missing'));
 
-      const batches = await Promise.all(
-        ['w1', 'w2', 'w3', 'w4'].map((owner) => store.claimDeliveries({ owner, now: 5_000, leaseMs: 1_000, limit: 15 })),
-      );
+      // A claim that doesn't lock the rows it picks hands the same most overdue ones to every
+      // worker that picks at the same time: every round races RACERS workers for 40 deliveries.
+      for (let round = 1; round <= 3; round++) {
+        const m = message();
+        const all = Array.from({ length: 40 }, (_, i) => delivery(m, `ep_${i}`));
+        await store.createDeliveries(m, all);
 
-      const claimed = batches.flatMap((batch) => batch.map((c) => c.delivery.id));
-      assert.equal(new Set(claimed).size, claimed.length, 'a delivery was claimed twice');
-      assert.equal(claimed.length, 40);
+        const owners = Array.from({ length: RACERS }, (_, i) => `w${round}_${i}`);
+        const batches = await Promise.all(owners.map((owner) => store.claimDeliveries({ owner, now: 5_000, leaseMs: 1_000, limit: 10 })));
+
+        const claimed = batches.flatMap((batch) => batch.map((c) => c.delivery.id));
+        assert.deepEqual(repeated(claimed), [], `a delivery was claimed twice in round ${round}`);
+        assert.deepEqual([...claimed].sort(), ids(all).sort(), `round ${round} claimed ${claimed.length} of 40`);
+
+        // A lease another worker's claim overwrote fails its owner's write.
+        const recorded = await Promise.all(
+          batches.flatMap((batch, i) =>
+            batch.map(({ delivery: d }) =>
+              store.recordDeliveryAttempt(d.id, owners[i]!, {
+                status: 'succeeded',
+                attempts: 1,
+                nextAttemptAt: null,
+                failureReason: null,
+                completedAt: 5_001,
+                attempt: attempt(d, 1, 5_000, 200),
+              }),
+            ),
+          ),
+        );
+        assert.equal(recorded.filter((ok) => !ok).length, 0, `round ${round}: a worker lost the lease of a delivery it had just claimed`);
+      }
     },
   ],
   [
     'fan-outs of one message racing create each delivery once',
     async (store) => {
+      await openConnections(() => store.getDelivery('dlv_missing'));
       const m = message();
       const endpoints = ['ep_a', 'ep_b', 'ep_c'];
       const counts = await Promise.all(
@@ -606,6 +658,7 @@ const DELIVERY_CONCURRENT: Case<WebhookDeliveryStore>[] = [
       await store.createDeliveries(m, [d]);
       await store.claimDeliveries({ owner: 'stale', now: 1_000, leaseMs: 100, limit: 1 });
       await store.claimDeliveries({ owner: 'fresh', now: 1_200, leaseMs: 100, limit: 1 });
+      await openConnections(() => store.getDelivery(d.id));
 
       const update = (n: number) => ({
         status: 'pending' as const,
@@ -628,6 +681,7 @@ const DELIVERY_CONCURRENT: Case<WebhookDeliveryStore>[] = [
   [
     "a manual retry racing a claim never clears the claim's lease",
     async (store) => {
+      await openConnections(() => store.getDelivery('dlv_missing'));
       for (let round = 0; round < 10; round++) {
         const m = message();
         const d = delivery(m, 'ep_a', { status: 'failed', nextAttemptAt: null, completedAt: 1, failureReason: 'exhausted' });
