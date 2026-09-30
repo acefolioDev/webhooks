@@ -1,10 +1,31 @@
-import type { WebhookDeliveryFilter } from '../interfaces/webhook-delivery.interface.js';
+import type { WebhookDelivery, WebhookDeliveryFilter } from '../interfaces/webhook-delivery.interface.js';
 import type { WebhookEndpointFailure, WebhookEndpointSecret } from '../interfaces/webhook-endpoint-store.interface.js';
 
 // What a store decides the same way whatever keeps its rows: the SQL stores apply these to the row they locked.
 
 /** `listEndpoints()` and `listDeliveries()` without a `limit`. */
 export const DEFAULT_PAGE_SIZE = 50;
+
+/**
+ * Epoch milliseconds whole, as a `Date` holds them. The SQL stores keep times as `bigint`, and the kit's
+ * `SqlParams.bigint()` refuses a fraction, which a fractional duration in the module's options would put into every
+ * write of the worker.
+ */
+export function wholeMs(value: number | null): number | null {
+  return value === null ? null : Math.trunc(value);
+}
+
+/**
+ * The fan-out's deliveries in one order, whatever the caller's: by endpoint, then id. Two fan-outs of a message that
+ * race on its deliveries then never each wait for a row the other inserted (a deadlock).
+ */
+export function inEndpointOrder(deliveries: readonly WebhookDelivery[]): WebhookDelivery[] {
+  return [...deliveries].sort((a, b) => compare(a.endpointId, b.endpointId) || compare(a.id, b.id));
+}
+
+function compare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 
 /**
  * `addEndpointSecret()`: `secret` first, then each other secret expiring at the earlier of its own expiry and

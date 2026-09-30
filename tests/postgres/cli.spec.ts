@@ -1,20 +1,14 @@
 /**
- * The `nest-webhooks` command (lib/postgres/cli.ts: the kit's runStoreCli() on PostgresWebhookStore's schema): `sql`
- * prints what migrationSql() does, `migrate` applies the migrations, `status` exits with 1 while the schema is behind,
- * and every misuse says what to do instead, in webhooks' words.
+ * The `nest-webhooks` command on PostgreSQL (lib/cli.ts: the kit's runStoreCli() on both stores' schemas; a
+ * postgres:// URL picks PostgresWebhookStore's): `sql` prints what migrationSql() does, `migrate` applies the
+ * migrations, `status` exits with 1 while the schema is behind, and every misuse says what to do instead, in webhooks'
+ * words. tests/mysql/cli.spec.ts runs it on MySQL.
  */
-import { runStoreCli, type StoreCliIo } from '@nestjs/store-kit';
 import { PostgresWebhookStore } from '../../lib/postgres/index.js';
-import { webhookStoreSchema } from '../../lib/postgres/migrations/index.js';
+import { runCli as run } from '../support/cli.js';
 import { testDatabase } from './support.js';
 
 const { database, reason } = await testDatabase('pgstore_cli');
-
-async function run(argv: string[], env: StoreCliIo['env'] = {}) {
-  const output = { out: '', err: '' };
-  const code = await runStoreCli([webhookStoreSchema], argv, { out: (text) => (output.out += text), err: (text) => (output.err += text), env });
-  return { code, ...output };
-}
 
 describe('nest-webhooks', () => {
   it('sql prints the migrations as migrationSql() does, without a database, with statement breakpoints on request', async () => {
@@ -45,13 +39,13 @@ describe('nest-webhooks', () => {
     expect((await run(['sql', '--verbose'])).err).toMatch(/^Unknown option '--verbose'/);
   });
 
-  it('needs the database for migrate and status: --url, else DATABASE_URL, of PostgreSQL', async () => {
+  it('needs the database for migrate and status: --url, else DATABASE_URL, of PostgreSQL or MySQL', async () => {
     expect(await run(['migrate'])).toEqual({ code: 1, out: '', err: 'nest-webhooks migrate needs the database: pass --url, or set DATABASE_URL.\n' });
     expect((await run(['status'])).err).toBe('nest-webhooks status needs the database: pass --url, or set DATABASE_URL.\n');
-    expect(await run(['migrate', '--url', 'mysql://root:secret@127.0.0.1/shop'])).toEqual({
+    expect(await run(['migrate', '--url', 'sqlite:///tmp/shop.db'])).toEqual({
       code: 1,
       out: '',
-      err: "nest-webhooks: MySQL isn't supported yet: the stores of @nestjs/webhooks run on PostgreSQL.\n",
+      err: 'nest-webhooks migrate takes a database URL that starts with postgres:// or postgresql:// or mysql://.\n',
     });
   });
 

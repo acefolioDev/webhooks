@@ -34,7 +34,7 @@ import {
   toMessage,
   type SqlRow,
 } from '../utils/sql-rows.util.js';
-import { assertDeliveryFilter, DEFAULT_PAGE_SIZE, endpointFailure, rotateSecrets } from '../utils/store-rules.util.js';
+import { assertDeliveryFilter, DEFAULT_PAGE_SIZE, endpointFailure, inEndpointOrder, rotateSecrets, wholeMs } from '../utils/store-rules.util.js';
 import type { PostgresWebhookStoreOptions } from './interfaces/postgres-webhook-store-options.interface.js';
 import { webhookStoreSchema } from './migrations/index.js';
 
@@ -258,7 +258,7 @@ ORDER BY e.created_at, e.id`,
     await this.readiness.ready();
     // In one order, whatever the caller's: two fan-outs of a message racing on its deliveries never each wait for a row
     // the other inserted (a deadlock).
-    const sorted = [...deliveries].sort((a, b) => compare(a.endpointId, b.endpointId) || compare(a.id, b.id));
+    const sorted = inEndpointOrder(deliveries);
 
     return this.executor.transaction(async (tx) => {
       const m = new SqlParams();
@@ -494,12 +494,9 @@ SELECT count(*)::text AS n FROM pruned`,
   }
 }
 
-/**
- * Epoch milliseconds as a `bigint` parameter, whole, as a `Date` holds them: the cast refuses a fraction, which a
- * fractional duration in the module's options would put into every write of the worker.
- */
+/** Epoch milliseconds as a `bigint` parameter, whole (see `wholeMs()`). */
 function ms(p: SqlParams, value: number | null): string {
-  return p.bigint(value === null ? null : Math.trunc(value));
+  return p.bigint(wholeMs(value));
 }
 
 /**
@@ -508,8 +505,4 @@ function ms(p: SqlParams, value: number | null): string {
  */
 function storable(text: string | null): string | null {
   return text === null ? null : text.replaceAll('\u0000', '\uFFFD');
-}
-
-function compare(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
 }

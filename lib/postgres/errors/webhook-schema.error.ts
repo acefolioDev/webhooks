@@ -1,9 +1,9 @@
 import { WebhooksError } from '../../errors/webhooks.error.js';
 
 /**
- * `PostgresWebhookStore`'s schema can't serve this version of the package: it is behind the store's migrations (and
- * `migrate` is off), or applying them failed (`cause`). The store refuses every call until it's fixed, and the
- * application fails to start with it.
+ * The schema of `PostgresWebhookStore` (`@nestjs/webhooks/postgres`) or `MySqlWebhookStore` (`@nestjs/webhooks/mysql`)
+ * can't serve this version of the package: it is behind the store's migrations (and `migrate` is off), or applying
+ * them failed (`cause`). The store refuses every call until it's fixed, and the application fails to start with it.
  *
  * ```ts
  * try {
@@ -17,7 +17,7 @@ import { WebhooksError } from '../../errors/webhooks.error.js';
  * ```
  */
 export class WebhookSchemaError extends WebhooksError {
-  /** The PostgreSQL schema. */
+  /** The store's `schema`: a PostgreSQL schema, or on MySQL the prefix of the store's tables (`<schema>_<table>`). */
   readonly schema: string;
   /** The schema's version: the last migration applied to it, `0` for none. */
   readonly version: number;

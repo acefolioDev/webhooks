@@ -1,0 +1,17 @@
+generator client {
+  provider = "prisma-client"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+/// The application's table: an application's Prisma client, which tests/mysql hands MySqlWebhookStore through
+/// fromPrisma() with @prisma/adapter-mariadb.
+model Order {
+  id     String @id @db.VarChar(191)
+  status String @db.VarChar(32)
+
+  @@map("orders")
+}

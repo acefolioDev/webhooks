@@ -1,16 +1,16 @@
-import { toBool, toInt, toJson } from '@nestjs/store-kit/postgres';
+import { toBool, toInt, toJson } from '@nestjs/store-kit';
 import type { WebhookDelivery, WebhookDeliveryAttempt, WebhookDeliveryFailureReason, WebhookDeliveryStatus } from '../interfaces/webhook-delivery.interface.js';
 import type { WebhookEndpointRecord, WebhookEndpointSecret } from '../interfaces/webhook-endpoint-store.interface.js';
 import type { WebhookEndpointDisabledReason } from '../interfaces/webhook-endpoint.interface.js';
 import type { WebhookMessage } from '../interfaces/webhook-message.interface.js';
 
-// The SQL stores' rows and the records they hold, whatever the database: a store selects these columns in the text
-// form below, and maps the rows with these functions.
+// The SQL stores' rows and the records they hold, whatever the database: PostgresWebhookStore and MySqlWebhookStore
+// select these columns in the text form below, and map the rows with these functions.
 
 /**
  * A row as the SQL stores read it: every column as text or `null`, which every driver and ORM hands over unchanged.
- * Integers are decimal text, booleans `'true'` or `'false'`, JSON its text: what `columns()` of
- * `@nestjs/store-kit/postgres` selects.
+ * Integers are decimal text, booleans `'true'` or `'false'` (PostgreSQL) or `'1'` or `'0'` (MySQL), JSON its text:
+ * what `columns()` of `@nestjs/store-kit/postgres` and `@nestjs/store-kit/mysql` selects.
  */
 export type SqlRow = Record<string, string | null>;
 
