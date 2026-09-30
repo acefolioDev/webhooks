@@ -14,7 +14,7 @@ export interface MySqlWebhookStoreOptions {
    * database (the one the pool or ORM connects to). Every statement and transaction of the store runs on it; none
    * joins the application's transactions (the outbox carries a dispatched message out of them).
    */
-  executor: SqlExecutor;
+  executor: SqlExecutor<'mysql'>;
   /**
    * The name the store's tables start with, in the connection's database: `<schema>_<table>` (`nest_webhooks`:
    * `nest_webhooks_endpoints`, `nest_webhooks_deliveries`...). Keep it for the store alone. Lowercase letters, digits

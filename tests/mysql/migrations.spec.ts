@@ -295,7 +295,9 @@ describe('options and readiness, in the store’s words', () => {
     expect(() => new MySqlWebhookStore({ executor: {} as SqlExecutor })).toThrow('MySqlWebhookStore: `executor` must be a SqlExecutor, such as fromMysql2(pool), fromDrizzle(db)');
     const postgres = new pg.Pool({ connectionString: 'postgres://postgres@127.0.0.1:1/none' });
     try {
-      expect(() => new MySqlWebhookStore({ executor: fromPg(postgres) as unknown as SqlExecutor })).toThrow(
+      // A PostgreSQL executor is a compile error first (the options take SqlExecutor<'mysql'>), then a TypeError.
+      // @ts-expect-error
+      expect(() => new MySqlWebhookStore({ executor: fromPg(postgres) })).toThrow(
         "MySqlWebhookStore runs on MySQL, and `executor` is a PostgreSQL executor: import the executor from '@nestjs/webhooks/mysql' (fromMysql2, fromDrizzle, fromTypeOrm, fromPrisma or fromKysely).",
       );
     } finally {

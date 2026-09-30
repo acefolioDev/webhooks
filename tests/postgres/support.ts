@@ -19,7 +19,7 @@ import { endPool, startPostgres } from '../support/postgres.js';
 /** A database client as an application holds one, and the executor the store takes of it. */
 export interface Client {
   name: string;
-  executor: SqlExecutor;
+  executor: SqlExecutor<'postgres'>;
   close(): Promise<void>;
 }
 

@@ -13,7 +13,7 @@ export interface PostgresWebhookStoreOptions {
    * `fromPrisma(prisma)` or `fromKysely(db)`. Every statement and transaction of the store runs on it; none joins the
    * application's transactions (the outbox carries a dispatched message out of them).
    */
-  executor: SqlExecutor;
+  executor: SqlExecutor<'postgres'>;
   /**
    * The schema that holds the store's tables, created by its first migration: keep it for the store alone. Letters,
    * digits and underscores, not starting with a digit, at most 63 characters. Default: `'nest_webhooks'`.

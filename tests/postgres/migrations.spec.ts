@@ -38,7 +38,7 @@ const pool = () => {
   return opened;
 };
 
-const store = (schema: string, options: { migrate?: boolean; executor?: SqlExecutor } = {}) =>
+const store = (schema: string, options: { migrate?: boolean; executor?: SqlExecutor<'postgres'> } = {}) =>
   new PostgresWebhookStore({ executor: options.executor ?? fromPg(pool()), schema, migrate: options.migrate });
 
 const endpoint = (id: string) => ({
@@ -56,7 +56,7 @@ const endpoint = (id: string) => ({
 });
 
 /** An executor that records every statement it runs, and its parameters. */
-function recording(executor: SqlExecutor): { executor: SqlExecutor; statements: Array<{ text: string; params?: readonly unknown[] }> } {
+function recording(executor: SqlExecutor<'postgres'>): { executor: SqlExecutor<'postgres'>; statements: Array<{ text: string; params?: readonly unknown[] }> } {
   const statements: Array<{ text: string; params?: readonly unknown[] }> = [];
   const record = (tx: SqlTransaction): SqlTransaction => ({
     query: (text, params) => {
@@ -269,10 +269,12 @@ describe('options', () => {
   });
 
   it('refuse an executor that is none or of another database, and a migrate that is no boolean', () => {
-    expect(() => new PostgresWebhookStore({ executor: {} as SqlExecutor })).toThrow('PostgresWebhookStore: `executor` must be a SqlExecutor');
+    expect(() => new PostgresWebhookStore({ executor: {} as SqlExecutor<'postgres'> })).toThrow('PostgresWebhookStore: `executor` must be a SqlExecutor');
     const executor = fromPg(pool());
     const mysql = { dialect: 'mysql', query: executor.query.bind(executor), transaction: executor.transaction.bind(executor), wrapTransaction: executor.wrapTransaction.bind(executor) };
-    expect(() => new PostgresWebhookStore({ executor: mysql as SqlExecutor })).toThrow(
+    // A MySQL executor is a compile error first (the options take SqlExecutor<'postgres'>), then a TypeError.
+    // @ts-expect-error
+    expect(() => new PostgresWebhookStore({ executor: mysql as SqlExecutor<'mysql'> })).toThrow(
       "PostgresWebhookStore runs on PostgreSQL, and `executor` is a MySQL executor: import the executor from '@nestjs/webhooks/postgres' (fromPg, fromDrizzle, fromTypeOrm, fromPrisma or fromKysely).",
     );
     expect(() => new PostgresWebhookStore({ executor: fromPg(pool()), migrate: 'yes' as unknown as boolean })).toThrow(

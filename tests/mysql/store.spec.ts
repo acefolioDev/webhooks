@@ -10,7 +10,7 @@
 import mysql from 'mysql2/promise';
 import { WebhooksStorage, type WebhookDelivery, type WebhookEndpointRecord, type WebhookMessage } from '../../lib/index.js';
 import { fromMysql2, MySqlWebhookStore } from '../../lib/mysql/index.js';
-import { PostgresWebhookStore, type SqlExecutor as PostgresSqlExecutor } from '../../lib/postgres/index.js';
+import { PostgresWebhookStore } from '../../lib/postgres/index.js';
 import { clients, mysql2Client, onMysql, tables, testDatabase, truncate, type Client } from './support.js';
 
 const { database, reason } = await testDatabase('mystore_store');
@@ -213,7 +213,9 @@ describe('MySqlWebhookStore through mysql2', () => {
   });
 
   it('is refused by the PostgreSQL store, which names its own subpath', () => {
-    expect(() => new PostgresWebhookStore({ executor: client.executor as unknown as PostgresSqlExecutor })).toThrow(
+    // A MySQL executor is a compile error first (the options take SqlExecutor<'postgres'>), then a TypeError.
+    // @ts-expect-error
+    expect(() => new PostgresWebhookStore({ executor: client.executor })).toThrow(
       "PostgresWebhookStore runs on PostgreSQL, and `executor` is a MySQL executor: import the executor from '@nestjs/webhooks/postgres' (fromPg, fromDrizzle, fromTypeOrm, fromPrisma or fromKysely).",
     );
   });
