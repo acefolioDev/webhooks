@@ -32,7 +32,7 @@ describe('nest-webhooks', () => {
     const help = await run(['--help']);
     expect(help).toMatchObject({ code: 0, err: '' });
     expect(help.out).toMatch(/^Usage: nest-webhooks <command> \[options\]/);
-    expect(help.out).toContain("PostgresWebhookStore's schema (@nestjs/webhooks/postgres):");
+    expect(help.out).toContain("\n\nPostgresWebhookStore's schema (@nestjs/webhooks/postgres) or MySqlWebhookStore's (@nestjs/webhooks/mysql):\n\n  migrate   ");
     expect(help.out).toContain('--schema <name>    The store\'s schema. Default: nest_webhooks');
     expect(await run([])).toEqual({ code: 1, out: '', err: help.out });
     expect(await run(['upgrade'])).toEqual({ code: 1, out: '', err: `Unknown command "upgrade".\n\n${help.out}` });

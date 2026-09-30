@@ -31,7 +31,7 @@ describe('nest-webhooks for MySqlWebhookStore', () => {
   it('prints a usage that names both stores, and how each migrates', async () => {
     const help = await run(['--help']);
     expect(help).toMatchObject({ code: 0, err: '' });
-    expect(help.out).toContain("PostgresWebhookStore's schema (@nestjs/webhooks/postgres):\nMySqlWebhookStore's schema (@nestjs/webhooks/mysql):");
+    expect(help.out).toContain("\n\nPostgresWebhookStore's schema (@nestjs/webhooks/postgres) or MySqlWebhookStore's (@nestjs/webhooks/mysql):\n\n  migrate   ");
     expect(help.out).toContain('MySQL: one statement at a time, under GET_LOCK(), resuming where a failed run stopped)');
     expect(help.out).toContain('--url <url>        The database (postgres://... or mysql://...). Default: $DATABASE_URL');
   });
