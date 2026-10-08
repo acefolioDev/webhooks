@@ -454,7 +454,7 @@ WHERE ${p.in('id', [...new Set(ids)])} AND lease_owner = ${p.text(owner)}`,
     return row && toMessage(row);
   }
 
-  async listDeliveries({ tenant, endpointId, messageId, status, type, limit = DEFAULT_PAGE_SIZE, offset = 0 }: WebhookDeliveryQuery): Promise<WebhookDelivery[]> {
+  async listDeliveries({ tenant, endpointId, messageId, status, type, failureReason, lastStatusCode, limit = DEFAULT_PAGE_SIZE, offset = 0 }: WebhookDeliveryQuery): Promise<WebhookDelivery[]> {
     await this.readiness.ready();
     const p = new SqlParams();
     const where = [
@@ -463,6 +463,8 @@ WHERE ${p.in('id', [...new Set(ids)])} AND lease_owner = ${p.text(owner)}`,
       ...(messageId !== undefined ? [`d.message_id = ${p.text(messageId)}`] : []),
       ...(status !== undefined ? [`d.status = ${p.text(status)}`] : []),
       ...(type !== undefined ? [`d.type = ${p.text(type)}`] : []),
+      ...(failureReason !== undefined ? [p.equals('d.failure_reason', failureReason)] : []),
+      ...(lastStatusCode !== undefined ? [equalsInt(p, 'd.last_status_code', lastStatusCode)] : []),
     ];
     const rows = await this.executor.query<SqlRow>(
       `SELECT ${columns(DELIVERY_COLUMNS, 'd')} FROM ${this.t.deliveries} d${where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''}
@@ -484,7 +486,7 @@ ORDER BY d.created_at DESC, d.id DESC LIMIT ${p.limit(limit)} OFFSET ${p.limit(o
 
   async retryDeliveries(filter: WebhookDeliveryFilter, now: number): Promise<number> {
     assertDeliveryFilter(filter);
-    const { ids, endpointId, tenant, status, since } = filter;
+    const { ids, endpointId, tenant, status, since, failureReason, lastStatusCode } = filter;
     if (ids !== undefined && ids.length === 0) {
       return 0;
     }
@@ -501,6 +503,8 @@ ORDER BY d.created_at DESC, d.id DESC LIMIT ${p.limit(limit)} OFFSET ${p.limit(o
         ...(tenant !== undefined ? [p.equals('tenant', tenant)] : []),
         ...(status !== undefined ? [`status = ${p.text(status)}`] : []),
         ...(since !== undefined ? [`created_at >= ${ms(p, +since)}`] : []),
+        ...(failureReason !== undefined ? [p.equals('failure_reason', failureReason)] : []),
+        ...(lastStatusCode !== undefined ? [equalsInt(p, 'last_status_code', lastStatusCode)] : []),
         // Checked again on the locked row: a delivery a worker claims meanwhile keeps its lease.
         `(lease_until IS NULL OR lease_until <= ${ms(p, now)})`,
       ];
@@ -604,6 +608,11 @@ LIMIT ${p.limit(PRUNED_PER_TRANSACTION)}`,
 /** Epoch milliseconds as a `bigint` parameter, whole (see `wholeMs()`). */
 function ms(p: SqlParams, value: number | null): string {
   return p.bigint(wholeMs(value));
+}
+
+/** `column = value` of an integer column, or `column IS NULL` for `null`: `p.equals()` binds text. */
+function equalsInt(p: SqlParams, column: string, value: number | null): string {
+  return value === null ? `${column} IS NULL` : `${column} = ${p.int(value)}`;
 }
 
 /** An INSERT's column list, each quoted. */

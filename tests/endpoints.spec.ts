@@ -239,7 +239,7 @@ describe('dispatch()', () => {
 });
 
 describe('the delivery log', () => {
-  it('filters by type, status and tenant, newest first, with limit and offset', async () => {
+  it('filters by type, status, tenant, failure reason and last status code, newest first, with limit and offset', async () => {
     const clock = controllableClock();
     const t = await sendingApp({ retry: false });
     await t.endpoints.create({ url: 'https://a.example/', eventTypes: ['*'], tenant: 'shop-1' });
@@ -264,8 +264,22 @@ describe('the delivery log', () => {
     ]);
     expect(shape(await t.deliveries.list({ type: 'order.shipped', status: 'failed' }))).toEqual(['order.shipped/shop-1/failed', 'order.shipped/shop-2/failed']);
     expect(shape(await t.deliveries.list({ limit: 1, offset: 1 }))).toEqual(['order.shipped/shop-2/failed']);
+    expect(shape(await t.deliveries.list({ failureReason: 'exhausted', lastStatusCode: 500, tenant: 'shop-1' }))).toEqual([
+      'order.shipped/shop-1/failed',
+      'order.cancelled/shop-1/failed',
+    ]);
+    expect(shape(await t.deliveries.list({ failureReason: null, lastStatusCode: 200 }))).toEqual(['order.shipped/shop-1/succeeded']);
+    expect(shape(await t.deliveries.list({ failureReason: 'exhausted', lastStatusCode: 500, limit: 1, offset: 1 }))).toEqual([
+      'order.shipped/shop-2/failed',
+    ]);
+    clock.advance(1_000);
+    await t.transaction((tx) => t.webhooks.dispatch(tx, { type: 'order.shipped', tenant: 'shop-1', data: { fail: false } }));
+    await t.relay.runOnce();
+    expect(shape(await t.deliveries.list({ lastStatusCode: null, failureReason: null }))).toEqual(['order.shipped/shop-1/pending']);
     await expect(t.deliveries.list({ offset: 1.5 })).rejects.toThrow(/offset must be a whole number/);
     await expect(t.deliveries.list({ limit: 0 })).rejects.toThrow(/limit must be a whole number of at least 1/);
+    await expect(t.deliveries.list({ lastStatusCode: '500' as never })).rejects.toThrow(/lastStatusCode must be an HTTP status code/);
+    await expect(t.deliveries.list({ lastStatusCode: 1e10 })).rejects.toThrow(/lastStatusCode must be an HTTP status code/);
     await t.close();
   });
 

@@ -66,6 +66,16 @@ export interface WebhookDeliveryQuery {
   messageId?: string;
   status?: WebhookDeliveryStatus;
   type?: string;
+  /**
+   * `undefined`: any reason. `null`: deliveries with no failure reason. Not indexed (nor is `lastStatusCode`): on a
+   * large log, combine it with an indexed filter (`status`, `endpointId`, `tenant`).
+   */
+  failureReason?: WebhookDeliveryFailureReason | null;
+  /**
+   * The latest stored response status, kept across a manual retry. `undefined`: any. `null`: none yet (never
+   * attempted, or no attempt got a response).
+   */
+  lastStatusCode?: number | null;
   /** Default 50. */
   limit?: number;
   offset?: number;
@@ -79,6 +89,10 @@ export interface WebhookDeliveryFilter {
   status?: WebhookDeliveryStatus;
   /** Epoch ms or Date: deliveries created at or after this. */
   since?: number | Date;
+  /** As in `WebhookDeliveryQuery`. */
+  failureReason?: WebhookDeliveryFailureReason | null;
+  /** As in `WebhookDeliveryQuery`. */
+  lastStatusCode?: number | null;
   all?: boolean;
 }
 

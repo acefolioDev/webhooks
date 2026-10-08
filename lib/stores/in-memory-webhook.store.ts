@@ -214,7 +214,7 @@ export class InMemoryWebhookStore implements WebhookEndpointStore, WebhookDelive
     return message && clone(message);
   }
 
-  listDeliveries({ tenant, endpointId, messageId, status, type, limit = 50, offset = 0 }: WebhookDeliveryQuery): WebhookDelivery[] {
+  listDeliveries({ tenant, endpointId, messageId, status, type, failureReason, lastStatusCode, limit = 50, offset = 0 }: WebhookDeliveryQuery): WebhookDelivery[] {
     return [...this.deliveryRows.values()]
       .map((row) => row.delivery)
       .filter(
@@ -223,7 +223,9 @@ export class InMemoryWebhookStore implements WebhookEndpointStore, WebhookDelive
           (endpointId === undefined || d.endpointId === endpointId) &&
           (messageId === undefined || d.messageId === messageId) &&
           (status === undefined || d.status === status) &&
-          (type === undefined || d.type === type),
+          (type === undefined || d.type === type) &&
+          (failureReason === undefined || d.failureReason === failureReason) &&
+          (lastStatusCode === undefined || d.lastStatusCode === lastStatusCode),
       )
       .sort((a, b) => b.createdAt - a.createdAt || compareDesc(a.id, b.id))
       .slice(offset, offset + limit)
@@ -235,8 +237,17 @@ export class InMemoryWebhookStore implements WebhookEndpointStore, WebhookDelive
   }
 
   retryDeliveries(filter: WebhookDeliveryFilter, now: number): number {
-    const { ids, endpointId, tenant, status, since, all } = filter;
-    if (!all && ids === undefined && endpointId === undefined && tenant === undefined && status === undefined && since === undefined) {
+    const { ids, endpointId, tenant, status, since, failureReason, lastStatusCode, all } = filter;
+    if (
+      !all &&
+      ids === undefined &&
+      endpointId === undefined &&
+      tenant === undefined &&
+      status === undefined &&
+      since === undefined &&
+      failureReason === undefined &&
+      lastStatusCode === undefined
+    ) {
       throw new Error('Refusing an empty delivery filter; pass { all: true } to retry every delivery');
     }
 
@@ -258,6 +269,12 @@ export class InMemoryWebhookStore implements WebhookEndpointStore, WebhookDelive
         continue;
       }
       if (since !== undefined && d.createdAt < +since) {
+        continue;
+      }
+      if (failureReason !== undefined && d.failureReason !== failureReason) {
+        continue;
+      }
+      if (lastStatusCode !== undefined && d.lastStatusCode !== lastStatusCode) {
         continue;
       }
       if (row.leaseUntil !== null && row.leaseUntil > now) {
