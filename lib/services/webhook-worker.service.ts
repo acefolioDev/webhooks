@@ -11,6 +11,7 @@ import { WebhookDeliveryTimeoutError } from '../errors/webhook-delivery-timeout.
 import { WebhookResponseError } from '../errors/webhook-response.error.js';
 import { WebhookDestinationBlockedError } from '../errors/webhook-destination-blocked.error.js';
 import { describeError } from '../utils/describe-error.util.js';
+import { truncateUtf8 } from '../utils/truncate-utf8.util.js';
 import { WebhooksEvents } from '../events/webhooks-events.service.js';
 import type { WebhooksEvent } from '../events/webhooks-events.interface.js';
 import type { WebhookClaimedDelivery, WebhookDeliveryUpdate } from '../interfaces/webhook-delivery-store.interface.js';
@@ -309,7 +310,7 @@ export class WebhookWorker implements OnApplicationBootstrap, OnModuleDestroy {
       at: startedAt,
       durationMs,
       statusCode,
-      response: response ? response.body.slice(0, this.config.maxResponseSize) : null,
+      response: response ? truncateUtf8(response.body, this.config.maxResponseSize) : null,
       error: ok ? null : describeError(error ?? new WebhookResponseError(statusCode!)),
     };
 
